@@ -1,0 +1,33 @@
+{
+  "name": "taiwan-stock-analysis",
+  "version": "1.0.0",
+  "description": "台股分析系統 - Taiwan Stock Analysis System",
+  "main": "src/server/app.js",
+  "scripts": {
+    "start": "node src/server/app.js",
+    "init-db": "node src/database/init.js",
+    "fetch-stocks": "node src/crawler/fetchStockList.js",
+    "fetch-prices": "node src/crawler/fetchDailyPrices.js",
+    "calculate-indicators": "node src/analysis/calculateIndicators.js",
+    "server": "node src/server/app.js"
+  },
+  "keywords": ["taiwan", "stock", "analysis", "finance"],
+  "author": "",
+  "license": "MIT",
+  "engines": {
+    "node": ">=16.0.0"
+  },
+  "dependencies": {
+    "axios": "^1.6.0",
+    "cheerio": "^1.0.0-rc.12",
+    "express": "^4.18.2",
+    "mysql2": "^3.6.0",
+    "dotenv": "^16.3.1",
+    "node-cron": "^3.0.2",
+    "csv-parse": "^5.5.0",
+    "iconv-lite": "^0.6.3"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.1"
+  }
+}

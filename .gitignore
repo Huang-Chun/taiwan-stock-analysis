@@ -1,0 +1,23 @@
+# 相依套件
+node_modules/
+
+# 環境變數（包含密碼）
+.env
+
+# 日誌檔案
+*.log
+logs/
+
+# 作業系統檔案
+.DS_Store
+Thumbs.db
+
+# IDE 設定
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# 暫存檔案
+tmp/
+temp/
