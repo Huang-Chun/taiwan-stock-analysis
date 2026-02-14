@@ -2,107 +2,121 @@ const { pool } = require('../database/connection');
 
 /**
  * 計算移動平均線 (MA)
- * @param {Array} prices - 價格陣列（由舊到新）
- * @param {number} period - 週期
  */
 function calculateMA(prices, period) {
   if (prices.length < period) return null;
-  
   const sum = prices.slice(-period).reduce((a, b) => a + b, 0);
   return (sum / period).toFixed(2);
 }
 
 /**
- * 計算 RSI (相對強弱指標)
- * @param {Array} prices - 價格陣列（由舊到新）
- * @param {number} period - 週期（預設14）
+ * 計算 EMA 陣列（回傳每日 EMA）
+ */
+function calculateEMASeries(prices, period) {
+  if (prices.length < period) return [];
+  const k = 2 / (period + 1);
+  // 初始值用前 period 天的 SMA
+  let ema = prices.slice(0, period).reduce((a, b) => a + b, 0) / period;
+  const result = new Array(period - 1).fill(null);
+  result.push(ema);
+  for (let i = period; i < prices.length; i++) {
+    ema = prices[i] * k + ema * (1 - k);
+    result.push(ema);
+  }
+  return result;
+}
+
+/**
+ * 計算 RSI（Wilder 平滑法）
  */
 function calculateRSI(prices, period = 14) {
   if (prices.length < period + 1) return null;
 
-  let gains = 0;
-  let losses = 0;
+  let avgGain = 0;
+  let avgLoss = 0;
 
-  // 計算價格變動
-  for (let i = prices.length - period; i < prices.length; i++) {
+  // 第一組：用簡單平均
+  for (let i = 1; i <= period; i++) {
     const change = prices[i] - prices[i - 1];
-    if (change > 0) {
-      gains += change;
-    } else {
-      losses += Math.abs(change);
-    }
+    if (change > 0) avgGain += change;
+    else avgLoss += Math.abs(change);
+  }
+  avgGain /= period;
+  avgLoss /= period;
+
+  // Wilder 平滑
+  for (let i = period + 1; i < prices.length; i++) {
+    const change = prices[i] - prices[i - 1];
+    const gain = change > 0 ? change : 0;
+    const loss = change < 0 ? Math.abs(change) : 0;
+    avgGain = (avgGain * (period - 1) + gain) / period;
+    avgLoss = (avgLoss * (period - 1) + loss) / period;
   }
 
-  const avgGain = gains / period;
-  const avgLoss = losses / period;
-
   if (avgLoss === 0) return 100;
-  
   const rs = avgGain / avgLoss;
-  const rsi = 100 - (100 / (1 + rs));
-
-  return rsi.toFixed(2);
+  return (100 - 100 / (1 + rs)).toFixed(2);
 }
 
 /**
- * 計算 MACD
- * @param {Array} prices - 價格陣列
+ * 計算 MACD（正確的 EMA12 - EMA26，signal = 9-period EMA of MACD）
  */
 function calculateMACD(prices) {
-  if (prices.length < 26) return { macd: null, signal: null, histogram: null };
+  if (prices.length < 35) return { macd: null, signal: null, histogram: null };
 
-  // 計算 EMA
-  const calculateEMA = (data, period) => {
-    const k = 2 / (period + 1);
-    let ema = data[0];
-    
-    for (let i = 1; i < data.length; i++) {
-      ema = data[i] * k + ema * (1 - k);
+  const ema12 = calculateEMASeries(prices, 12);
+  const ema26 = calculateEMASeries(prices, 26);
+
+  // 從第 26 天開始才有 MACD 值
+  const macdSeries = [];
+  for (let i = 0; i < prices.length; i++) {
+    if (ema12[i] !== null && ema12[i] !== undefined &&
+        ema26[i] !== null && ema26[i] !== undefined) {
+      macdSeries.push(ema12[i] - ema26[i]);
     }
-    return ema;
-  };
+  }
 
-  const ema12 = calculateEMA(prices, 12);
-  const ema26 = calculateEMA(prices, 26);
-  const macd = ema12 - ema26;
+  if (macdSeries.length < 9) return { macd: null, signal: null, histogram: null };
 
-  // 計算信號線（MACD 的 9 日 EMA）
-  // 這裡簡化處理，實際應該用 MACD 值的陣列
-  const signal = macd * 0.9; // 簡化版本
-  const histogram = macd - signal;
+  // signal = 9-period EMA of MACD series
+  const signalSeries = calculateEMASeries(macdSeries, 9);
+  const macdVal = macdSeries[macdSeries.length - 1];
+  const signalVal = signalSeries[signalSeries.length - 1];
+  const histogram = macdVal - signalVal;
 
   return {
-    macd: macd.toFixed(4),
-    signal: signal.toFixed(4),
+    macd: macdVal.toFixed(4),
+    signal: signalVal.toFixed(4),
     histogram: histogram.toFixed(4)
   };
 }
 
 /**
- * 計算 KD 指標
- * @param {Array} highs - 最高價陣列
- * @param {Array} lows - 最低價陣列
- * @param {Array} closes - 收盤價陣列
- * @param {number} period - 週期（預設9）
+ * 計算 KD 指標（正確遞推公式）
+ * K = 2/3 * prevK + 1/3 * RSV
+ * D = 2/3 * prevD + 1/3 * K
  */
 function calculateKD(highs, lows, closes, period = 9) {
   if (closes.length < period) return { k: null, d: null };
 
-  const recentHighs = highs.slice(-period);
-  const recentLows = lows.slice(-period);
-  const currentClose = closes[closes.length - 1];
+  let k = 50;
+  let d = 50;
 
-  const highest = Math.max(...recentHighs);
-  const lowest = Math.min(...recentLows);
+  // 從可計算 RSV 的第一天開始遞推
+  for (let i = period - 1; i < closes.length; i++) {
+    const windowHighs = highs.slice(i - period + 1, i + 1);
+    const windowLows = lows.slice(i - period + 1, i + 1);
+    const highest = Math.max(...windowHighs);
+    const lowest = Math.min(...windowLows);
 
-  let rsv = 50; // 預設值
-  if (highest !== lowest) {
-    rsv = ((currentClose - lowest) / (highest - lowest)) * 100;
+    let rsv = 50;
+    if (highest !== lowest) {
+      rsv = ((closes[i] - lowest) / (highest - lowest)) * 100;
+    }
+
+    k = (2 / 3) * k + (1 / 3) * rsv;
+    d = (2 / 3) * d + (1 / 3) * k;
   }
-
-  // 簡化版本的 K 值（實際應該用前一日的 K 值）
-  const k = rsv;
-  const d = k * 0.9; // 簡化版本
 
   return {
     k: k.toFixed(2),
@@ -112,21 +126,13 @@ function calculateKD(highs, lows, closes, period = 9) {
 
 /**
  * 計算布林通道
- * @param {Array} prices - 價格陣列
- * @param {number} period - 週期（預設20）
- * @param {number} stdDev - 標準差倍數（預設2）
  */
 function calculateBollinger(prices, period = 20, stdDev = 2) {
   if (prices.length < period) return { upper: null, middle: null, lower: null };
 
   const recentPrices = prices.slice(-period);
   const middle = recentPrices.reduce((a, b) => a + b, 0) / period;
-
-  // 計算標準差
-  const variance = recentPrices.reduce((sum, price) => {
-    return sum + Math.pow(price - middle, 2);
-  }, 0) / period;
-  
+  const variance = recentPrices.reduce((sum, price) => sum + Math.pow(price - middle, 2), 0) / period;
   const sd = Math.sqrt(variance);
 
   return {
@@ -137,20 +143,163 @@ function calculateBollinger(prices, period = 20, stdDev = 2) {
 }
 
 /**
+ * 計算 VWAP（成交量加權平均價）
+ * 使用最近 period 天
+ */
+function calculateVWAP(highs, lows, closes, volumes, period = 20) {
+  if (closes.length < period) return null;
+
+  let sumPV = 0;
+  let sumV = 0;
+  for (let i = closes.length - period; i < closes.length; i++) {
+    const typicalPrice = (highs[i] + lows[i] + closes[i]) / 3;
+    sumPV += typicalPrice * volumes[i];
+    sumV += volumes[i];
+  }
+
+  if (sumV === 0) return null;
+  return (sumPV / sumV).toFixed(2);
+}
+
+/**
+ * 計算 ATR（平均真實區間，Wilder 平滑）
+ */
+function calculateATR(highs, lows, closes, period = 14) {
+  if (closes.length < period + 1) return null;
+
+  // True Range 陣列
+  const trSeries = [];
+  for (let i = 1; i < closes.length; i++) {
+    const tr = Math.max(
+      highs[i] - lows[i],
+      Math.abs(highs[i] - closes[i - 1]),
+      Math.abs(lows[i] - closes[i - 1])
+    );
+    trSeries.push(tr);
+  }
+
+  // 初始 ATR = 前 period 天 TR 的 SMA
+  let atr = trSeries.slice(0, period).reduce((a, b) => a + b, 0) / period;
+
+  // Wilder 平滑
+  for (let i = period; i < trSeries.length; i++) {
+    atr = (atr * (period - 1) + trSeries[i]) / period;
+  }
+
+  return atr.toFixed(4);
+}
+
+/**
+ * 計算 DMI/ADX（方向移動指標）
+ */
+function calculateDMI(highs, lows, closes, period = 14) {
+  if (closes.length < period + 1) return { adx: null, plusDI: null, minusDI: null };
+
+  const trSeries = [];
+  const plusDM = [];
+  const minusDM = [];
+
+  for (let i = 1; i < closes.length; i++) {
+    const tr = Math.max(
+      highs[i] - lows[i],
+      Math.abs(highs[i] - closes[i - 1]),
+      Math.abs(lows[i] - closes[i - 1])
+    );
+    trSeries.push(tr);
+
+    const upMove = highs[i] - highs[i - 1];
+    const downMove = lows[i - 1] - lows[i];
+
+    plusDM.push(upMove > downMove && upMove > 0 ? upMove : 0);
+    minusDM.push(downMove > upMove && downMove > 0 ? downMove : 0);
+  }
+
+  if (trSeries.length < period) return { adx: null, plusDI: null, minusDI: null };
+
+  // Wilder smoothing for TR, +DM, -DM
+  let smoothTR = trSeries.slice(0, period).reduce((a, b) => a + b, 0);
+  let smoothPlusDM = plusDM.slice(0, period).reduce((a, b) => a + b, 0);
+  let smoothMinusDM = minusDM.slice(0, period).reduce((a, b) => a + b, 0);
+
+  const dxSeries = [];
+
+  for (let i = period; i < trSeries.length; i++) {
+    smoothTR = smoothTR - smoothTR / period + trSeries[i];
+    smoothPlusDM = smoothPlusDM - smoothPlusDM / period + plusDM[i];
+    smoothMinusDM = smoothMinusDM - smoothMinusDM / period + minusDM[i];
+
+    const pdi = smoothTR > 0 ? (smoothPlusDM / smoothTR) * 100 : 0;
+    const mdi = smoothTR > 0 ? (smoothMinusDM / smoothTR) * 100 : 0;
+    const diSum = pdi + mdi;
+    const dx = diSum > 0 ? (Math.abs(pdi - mdi) / diSum) * 100 : 0;
+    dxSeries.push({ dx, pdi, mdi });
+  }
+
+  if (dxSeries.length < period) return { adx: null, plusDI: null, minusDI: null };
+
+  // ADX = Wilder smoothing of DX
+  let adx = dxSeries.slice(0, period).reduce((a, b) => a + b.dx, 0) / period;
+  for (let i = period; i < dxSeries.length; i++) {
+    adx = (adx * (period - 1) + dxSeries[i].dx) / period;
+  }
+
+  const last = dxSeries[dxSeries.length - 1];
+
+  return {
+    adx: adx.toFixed(2),
+    plusDI: last.pdi.toFixed(2),
+    minusDI: last.mdi.toFixed(2)
+  };
+}
+
+/**
+ * 計算 Williams %R
+ */
+function calculateWilliamsR(highs, lows, closes, period = 14) {
+  if (closes.length < period) return null;
+
+  const recentHighs = highs.slice(-period);
+  const recentLows = lows.slice(-period);
+  const currentClose = closes[closes.length - 1];
+
+  const highest = Math.max(...recentHighs);
+  const lowest = Math.min(...recentLows);
+
+  if (highest === lowest) return -50;
+  const wr = ((highest - currentClose) / (highest - lowest)) * -100;
+  return wr.toFixed(2);
+}
+
+/**
+ * 計算 OBV（能量潮）
+ */
+function calculateOBV(closes, volumes) {
+  if (closes.length < 2) return null;
+
+  let obv = 0;
+  for (let i = 1; i < closes.length; i++) {
+    if (closes[i] > closes[i - 1]) {
+      obv += volumes[i];
+    } else if (closes[i] < closes[i - 1]) {
+      obv -= volumes[i];
+    }
+  }
+  return obv;
+}
+
+/**
  * 為指定股票計算所有技術指標
- * @param {string} stockId - 股票代號
  */
 async function calculateIndicatorsForStock(stockId) {
   const connection = await pool.getConnection();
 
   try {
-    // 取得該股票最近 60 天的資料
     const [rows] = await connection.query(
       `SELECT trade_date, open_price, high_price, low_price, close_price, volume
        FROM daily_prices
        WHERE stock_id = ?
        ORDER BY trade_date ASC
-       LIMIT 60`,
+       LIMIT 250`,
       [stockId]
     );
 
@@ -162,9 +311,13 @@ async function calculateIndicatorsForStock(stockId) {
     const closes = rows.map(r => parseFloat(r.close_price));
     const highs = rows.map(r => parseFloat(r.high_price));
     const lows = rows.map(r => parseFloat(r.low_price));
-
-    // 只計算最新一天的指標
+    const volumes = rows.map(r => parseInt(r.volume) || 0);
     const latestDate = rows[rows.length - 1].trade_date;
+
+    const macd = calculateMACD(closes);
+    const kd = calculateKD(highs, lows, closes);
+    const bollinger = calculateBollinger(closes);
+    const dmi = calculateDMI(highs, lows, closes);
 
     const indicators = {
       stock_id: stockId,
@@ -173,41 +326,46 @@ async function calculateIndicatorsForStock(stockId) {
       ma10: calculateMA(closes, 10),
       ma20: calculateMA(closes, 20),
       ma60: calculateMA(closes, 60),
-      rsi: calculateRSI(closes, 14)
+      rsi: calculateRSI(closes, 14),
+      macd: macd.macd,
+      macd_signal: macd.signal,
+      macd_histogram: macd.histogram,
+      kd_k: kd.k,
+      kd_d: kd.d,
+      bollinger_upper: bollinger.upper,
+      bollinger_middle: bollinger.middle,
+      bollinger_lower: bollinger.lower,
+      vwap: calculateVWAP(highs, lows, closes, volumes),
+      atr: calculateATR(highs, lows, closes),
+      adx: dmi.adx,
+      plus_di: dmi.plusDI,
+      minus_di: dmi.minusDI,
+      williams_r: calculateWilliamsR(highs, lows, closes),
+      obv: calculateOBV(closes, volumes)
     };
 
-    const macd = calculateMACD(closes);
-    indicators.macd = macd.macd;
-    indicators.macd_signal = macd.signal;
-    indicators.macd_histogram = macd.histogram;
-
-    const kd = calculateKD(highs, lows, closes);
-    indicators.kd_k = kd.k;
-    indicators.kd_d = kd.d;
-
-    const bollinger = calculateBollinger(closes);
-    indicators.bollinger_upper = bollinger.upper;
-    indicators.bollinger_middle = bollinger.middle;
-    indicators.bollinger_lower = bollinger.lower;
-
-    // 寫入資料庫
     await connection.query(
-      `INSERT INTO technical_indicators 
-      (stock_id, trade_date, ma5, ma10, ma20, ma60, rsi, macd, macd_signal, 
-       macd_histogram, kd_k, kd_d, bollinger_upper, bollinger_middle, bollinger_lower)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `INSERT INTO technical_indicators
+      (stock_id, trade_date, ma5, ma10, ma20, ma60, rsi, macd, macd_signal,
+       macd_histogram, kd_k, kd_d, bollinger_upper, bollinger_middle, bollinger_lower,
+       vwap, atr, adx, plus_di, minus_di, williams_r, obv)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON DUPLICATE KEY UPDATE
       ma5 = VALUES(ma5), ma10 = VALUES(ma10), ma20 = VALUES(ma20), ma60 = VALUES(ma60),
       rsi = VALUES(rsi), macd = VALUES(macd), macd_signal = VALUES(macd_signal),
       macd_histogram = VALUES(macd_histogram), kd_k = VALUES(kd_k), kd_d = VALUES(kd_d),
       bollinger_upper = VALUES(bollinger_upper), bollinger_middle = VALUES(bollinger_middle),
-      bollinger_lower = VALUES(bollinger_lower)`,
+      bollinger_lower = VALUES(bollinger_lower),
+      vwap = VALUES(vwap), atr = VALUES(atr), adx = VALUES(adx),
+      plus_di = VALUES(plus_di), minus_di = VALUES(minus_di),
+      williams_r = VALUES(williams_r), obv = VALUES(obv)`,
       [
         indicators.stock_id, indicators.trade_date, indicators.ma5, indicators.ma10,
         indicators.ma20, indicators.ma60, indicators.rsi, indicators.macd,
         indicators.macd_signal, indicators.macd_histogram, indicators.kd_k,
         indicators.kd_d, indicators.bollinger_upper, indicators.bollinger_middle,
-        indicators.bollinger_lower
+        indicators.bollinger_lower, indicators.vwap, indicators.atr, indicators.adx,
+        indicators.plus_di, indicators.minus_di, indicators.williams_r, indicators.obv
       ]
     );
 
@@ -227,7 +385,6 @@ async function calculateAllIndicators() {
   const connection = await pool.getConnection();
 
   try {
-    // 取得所有有價格資料的股票
     const [stocks] = await connection.query(
       `SELECT DISTINCT stock_id FROM daily_prices`
     );
@@ -249,7 +406,6 @@ async function calculateAllIndicators() {
   }
 }
 
-// 如果直接執行此檔案
 if (require.main === module) {
   calculateAllIndicators()
     .then(() => {

@@ -8,8 +8,14 @@
     "init-db": "node src/database/init.js",
     "fetch-stocks": "node src/crawler/fetchStockList.js",
     "fetch-prices": "node src/crawler/fetchDailyPrices.js",
+    "fetch-institutional": "node src/crawler/fetchInstitutionalTrading.js",
+    "fetch-margin": "node src/crawler/fetchMarginTrading.js",
+    "fetch-revenue": "node src/crawler/fetchMonthlyRevenue.js",
+    "fetch-financial": "node src/crawler/fetchFinancialStatements.js",
+    "fetch-dividends": "node src/crawler/fetchDividends.js",
     "calculate-indicators": "node src/analysis/calculateIndicators.js",
-    "server": "node src/server/app.js"
+    "server": "node src/server/app.js",
+    "mcp": "node src/mcp/server.js"
   },
   "keywords": ["taiwan", "stock", "analysis", "finance"],
   "author": "",
@@ -18,6 +24,7 @@
     "node": ">=16.0.0"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.1",
     "axios": "^1.6.0",
     "cheerio": "^1.0.0-rc.12",
     "express": "^4.18.2",

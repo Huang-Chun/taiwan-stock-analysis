@@ -1,0 +1,23 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(dir:*)",
+      "Bash(git -C \"C:\\\\Users\\\\User\\\\Desktop\\\\Claude\\\\stock-analysis\\\\taiwan-stock-analysis\\\\taiwan-stock-analysis\" log --oneline -10)",
+      "Bash(node --version:*)",
+      "Bash(mysql:*)",
+      "Bash(where:*)",
+      "Bash(\"C:\\\\Program Files\\\\MySQL\\\\MySQL Server 8.0\\\\bin\\\\mysql.exe\" -u root -pjxc4u9r3 -e \"SELECT 1 AS test\")",
+      "Bash(node:*)",
+      "Bash(curl:*)",
+      "Bash(\"C:\\\\Program Files\\\\MySQL\\\\MySQL Server 8.0\\\\bin\\\\mysql.exe\" -u root -pjxc4u9r3 taiwan_stock_db -e \"SELECT stock_id, stock_name, industry, market_type FROM stocks ORDER BY stock_id LIMIT 15;\")",
+      "Bash(\"C:\\\\Program Files\\\\MySQL\\\\MySQL Server 8.0\\\\bin\\\\mysql.exe\":*)",
+      "Bash(npm install)",
+      "mcp__taiwan-stock__get_stock_list",
+      "mcp__taiwan-stock__get_stock_latest"
+    ]
+  },
+  "enableAllProjectMcpServers": true,
+  "enabledMcpjsonServers": [
+    "taiwan-stock"
+  ]
+}

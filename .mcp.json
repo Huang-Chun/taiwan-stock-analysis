@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "taiwan-stock": {
+      "command": "node",
+      "args": ["src/mcp/server.js"],
+      "cwd": "C:\\Users\\User\\Desktop\\Claude\\stock-analysis\\taiwan-stock-analysis\\taiwan-stock-analysis"
+    }
+  }
+}
