@@ -45,7 +45,8 @@ async function fetchDailyPrice(stockId, date) {
       // 處理逗號和轉換數字
       const parseNumber = (str) => {
         if (!str || str === '--') return null;
-        return parseFloat(str.replace(/,/g, ''));
+        const val = parseFloat(str.replace(/,/g, ''));
+        return isNaN(val) ? null : val;
       };
 
       const record = {
