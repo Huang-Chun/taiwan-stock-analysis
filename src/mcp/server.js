@@ -3,7 +3,7 @@ const { StdioServerTransport } = require('@modelcontextprotocol/sdk/server/stdio
 const { z } = require('zod');
 const { pool } = require('../database/connection');
 const { fetchStockList } = require('../crawler/fetchStockList');
-const { fetchRecentPrices, fetchBatchDailyPrices } = require('../crawler/fetchDailyPrices');
+const { fetchRecentPrices, fetchBatchDailyPrices, fetchMultiMonthPrices } = require('../crawler/fetchDailyPrices');
 const { calculateIndicatorsForStock, calculateAllIndicators } = require('../analysis/calculateIndicators');
 const { fetchAndSaveInstitutionalTrading, fetchRecentInstitutionalTrading } = require('../crawler/fetchInstitutionalTrading');
 const { fetchAndSaveMarginTrading, fetchRecentMarginTrading } = require('../crawler/fetchMarginTrading');
@@ -390,16 +390,22 @@ server.tool(
   '從 TWSE 抓取最新每日股價資料並存入資料庫',
   {
     stock_id: z.string().optional().describe('指定股票代號,不填則抓取前 10 檔股票'),
+    months: z.number().min(1).max(12).optional().describe('往回抓幾個月,預設 1,最大 12'),
   },
-  async ({ stock_id }) => {
+  async ({ stock_id, months }) => {
     try {
       if (stock_id) {
-        const now = new Date();
-        const year = now.getFullYear();
-        const month = String(now.getMonth() + 1).padStart(2, '0');
-        const date = `${year}${month}01`;
-        await fetchBatchDailyPrices([stock_id], date);
-        return { content: [{ type: 'text', text: `成功抓取股票 ${stock_id} 的股價資料` }] };
+        if (months && months > 1) {
+          const total = await fetchMultiMonthPrices(stock_id, months);
+          return { content: [{ type: 'text', text: `成功抓取股票 ${stock_id} 近 ${months} 個月股價,共 ${total} 筆` }] };
+        } else {
+          const now = new Date();
+          const year = now.getFullYear();
+          const month = String(now.getMonth() + 1).padStart(2, '0');
+          const date = `${year}${month}01`;
+          await fetchBatchDailyPrices([stock_id], date);
+          return { content: [{ type: 'text', text: `成功抓取股票 ${stock_id} 的股價資料` }] };
+        }
       } else {
         await fetchRecentPrices();
         return { content: [{ type: 'text', text: '成功抓取最近股價資料（前 10 檔）' }] };
@@ -479,12 +485,33 @@ server.tool(
   {
     year: z.number().optional().describe('西元年,不填則抓取最近月份'),
     month: z.number().optional().describe('月份 1-12'),
+    stock_id: z.string().optional().describe('指定股票代號,不填則抓取全部(很慢)'),
   },
-  async ({ year, month }) => {
+  async ({ year, month, stock_id }) => {
     try {
       let count;
       if (year && month) {
-        count = await fetchAndSaveMonthlyRevenue(year, month);
+        const { fetchMonthlyRevenue } = require('../crawler/fetchMonthlyRevenue');
+        if (stock_id) {
+          // 單檔模式：直接呼叫底層函式帶 stockId
+          const records = await fetchMonthlyRevenue(year, month, stock_id);
+          if (records.length === 0) return { content: [{ type: 'text', text: `${stock_id} 在 ${year}/${month} 無月營收資料` }] };
+          // 存入 DB（複用 fetchAndSaveMonthlyRevenue 的邏輯太耦合，直接存）
+          const { pool } = require('../database/connection');
+          const connection = await pool.getConnection();
+          try {
+            for (const r of records) {
+              await connection.query(
+                `INSERT INTO monthly_revenue (stock_id, year, month, revenue) VALUES (?, ?, ?, ?)
+                 ON DUPLICATE KEY UPDATE revenue = VALUES(revenue)`,
+                [r.stock_id, r.year, r.month, r.revenue]
+              );
+            }
+            count = records.length;
+          } finally { connection.release(); }
+        } else {
+          count = await fetchAndSaveMonthlyRevenue(year, month);
+        }
       } else {
         count = await fetchRecentMonthlyRevenue();
       }
@@ -501,14 +528,20 @@ server.tool(
   {
     year: z.number().optional().describe('西元年,不填則抓取最近季度'),
     quarter: z.number().optional().describe('季度 1-4'),
+    stock_id: z.string().optional().describe('指定股票代號,不填則抓取全部(免費帳號很慢)'),
   },
-  async ({ year, quarter }) => {
+  async ({ year, quarter, stock_id }) => {
     try {
       let count;
       if (year && quarter) {
-        count = await fetchAndSaveFinancialStatements(year, quarter);
+        count = await fetchAndSaveFinancialStatements(year, quarter, stock_id);
       } else {
-        count = await fetchRecentFinancialStatements();
+        // 不帶年/季時也支援 stock_id
+        const now = new Date();
+        let y = now.getFullYear();
+        let q = Math.ceil(now.getMonth() / 3) - 1;
+        if (q <= 0) { y -= 1; q = 4; }
+        count = await fetchAndSaveFinancialStatements(y, q, stock_id);
       }
       return { content: [{ type: 'text', text: `成功同步 ${count} 筆財報資料` }] };
     } catch (error) {

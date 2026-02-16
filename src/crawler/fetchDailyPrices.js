@@ -178,6 +178,74 @@ async function fetchRecentPrices() {
   }
 }
 
+/**
+ * 抓取指定股票多個月份的股價資料
+ * @param {string} stockId - 股票代號
+ * @param {number} months - 往回抓幾個月（預設 1，最大 12）
+ */
+async function fetchMultiMonthPrices(stockId, months = 1) {
+  months = Math.min(Math.max(1, months), 12);
+  console.log(`開始抓取 ${stockId} 近 ${months} 個月股價...`);
+
+  const connection = await pool.getConnection();
+  let totalRecords = 0;
+
+  try {
+    const now = new Date();
+
+    for (let i = 0; i < months; i++) {
+      const targetDate = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const year = targetDate.getFullYear();
+      const month = String(targetDate.getMonth() + 1).padStart(2, '0');
+      const date = `${year}${month}01`;
+
+      console.log(`  抓取 ${year}/${month} ...`);
+      const records = await fetchDailyPrice(stockId, date);
+
+      if (records && records.length > 0) {
+        for (const record of records) {
+          await connection.query(
+            `INSERT INTO daily_prices
+            (stock_id, trade_date, open_price, high_price, low_price, close_price,
+             volume, turnover, transactions, change_amount, change_percent)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON DUPLICATE KEY UPDATE
+            open_price = VALUES(open_price),
+            high_price = VALUES(high_price),
+            low_price = VALUES(low_price),
+            close_price = VALUES(close_price),
+            volume = VALUES(volume),
+            turnover = VALUES(turnover),
+            transactions = VALUES(transactions),
+            change_amount = VALUES(change_amount),
+            change_percent = VALUES(change_percent)`,
+            [
+              record.stock_id, record.trade_date, record.open_price,
+              record.high_price, record.low_price, record.close_price,
+              record.volume, record.turnover, record.transactions,
+              record.change_amount, record.change_percent
+            ]
+          );
+        }
+        totalRecords += records.length;
+        console.log(`  ✓ ${year}/${month} - ${records.length} 筆`);
+      } else {
+        console.log(`  ✗ ${year}/${month} - 無資料`);
+      }
+
+      // 每月之間加 3 秒延遲避免被 TWSE 封鎖
+      if (i < months - 1) {
+        await new Promise(resolve => setTimeout(resolve, 3000));
+      }
+    }
+
+    console.log(`完成！共抓取 ${totalRecords} 筆資料`);
+    return totalRecords;
+  } finally {
+    connection.release();
+  }
+}
+
 // 如果直接執行此檔案
 if (require.main === module) {
   fetchRecentPrices()
@@ -194,5 +262,6 @@ if (require.main === module) {
 module.exports = {
   fetchDailyPrice,
   fetchBatchDailyPrices,
-  fetchRecentPrices
+  fetchRecentPrices,
+  fetchMultiMonthPrices
 };
