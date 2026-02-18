@@ -8,7 +8,7 @@ const { calculateIndicatorsForStock, calculateAllIndicators } = require('../anal
 const { fetchAndSaveInstitutionalTrading, fetchRecentInstitutionalTrading } = require('../crawler/fetchInstitutionalTrading');
 const { fetchAndSaveMarginTrading, fetchRecentMarginTrading } = require('../crawler/fetchMarginTrading');
 const { fetchAndSaveMonthlyRevenue, fetchRecentMonthlyRevenue } = require('../crawler/fetchMonthlyRevenue');
-const { fetchAndSaveFinancialStatements, fetchRecentFinancialStatements } = require('../crawler/fetchFinancialStatements');
+const { fetchAndSaveFinancialStatements, fetchRecentFinancialStatements, getLatestAvailableQuarters } = require('../crawler/fetchFinancialStatements');
 const { fetchAndSaveDividends, fetchRecentDividends } = require('../crawler/fetchDividends');
 const { detectAllSignals, scoreStock, screenByStrategy } = require('../analysis/strategies');
 const { analyzeInstitutionalTrend, detectAccumulation, analyzeConsensus, analyzeMarginTrend, screenByInstitutional } = require('../analysis/institutionalAnalysis');
@@ -532,16 +532,17 @@ server.tool(
   },
   async ({ year, quarter, stock_id }) => {
     try {
-      let count;
+      let count = 0;
       if (year && quarter) {
         count = await fetchAndSaveFinancialStatements(year, quarter, stock_id);
       } else {
-        // 不帶年/季時也支援 stock_id
-        const now = new Date();
-        let y = now.getFullYear();
-        let q = Math.ceil(now.getMonth() / 3) - 1;
-        if (q <= 0) { y -= 1; q = 4; }
-        count = await fetchAndSaveFinancialStatements(y, q, stock_id);
+        // 不帶年/季時，自動抓最近已公開的四季財報
+        const quarters = getLatestAvailableQuarters(4);
+        const labels = quarters.map(q => `${q.year}Q${q.quarter}`).join(', ');
+        for (const { year: qy, quarter: qq } of quarters) {
+          count += await fetchAndSaveFinancialStatements(qy, qq, stock_id);
+        }
+        return { content: [{ type: 'text', text: `成功同步 ${count} 筆財報資料（${labels}）` }] };
       }
       return { content: [{ type: 'text', text: `成功同步 ${count} 筆財報資料` }] };
     } catch (error) {

@@ -277,13 +277,52 @@ async function fetchAndSaveFinancialStatements(year, quarter, stockId) {
   return await saveRecords(records);
 }
 
-async function fetchRecentFinancialStatements() {
+/**
+ * 根據今天日期，推算已公開的最新季度，再往回算共 count 季
+ * 台灣財報公告期限：Q1→5/15, Q2→8/14, Q3→11/14, Q4(年報)→隔年3/31
+ */
+function getLatestAvailableQuarters(count = 4) {
   const now = new Date();
-  let year = now.getFullYear();
-  let quarter = Math.ceil(now.getMonth() / 3);
-  quarter -= 1;
-  if (quarter <= 0) { year -= 1; quarter = 4; }
-  return await fetchAndSaveFinancialStatements(year, quarter);
+  const y = now.getFullYear();
+  const m = now.getMonth() + 1; // 1-12
+  const d = now.getDate();
+
+  let latestYear, latestQuarter;
+
+  if (m > 11 || (m === 11 && d >= 14)) {
+    // 11/14 之後 → 當年 Q3 可用
+    latestYear = y; latestQuarter = 3;
+  } else if (m > 8 || (m === 8 && d >= 14)) {
+    // 8/14 之後 → 當年 Q2 可用
+    latestYear = y; latestQuarter = 2;
+  } else if (m > 5 || (m === 5 && d >= 15)) {
+    // 5/15 之後 → 當年 Q1 可用
+    latestYear = y; latestQuarter = 1;
+  } else if (m > 3 || (m === 3 && d >= 31)) {
+    // 3/31 之後 → 前年 Q4 可用
+    latestYear = y - 1; latestQuarter = 4;
+  } else {
+    // 1/1 ~ 3/30 → 前年 Q3 可用
+    latestYear = y - 1; latestQuarter = 3;
+  }
+
+  const quarters = [];
+  let qy = latestYear, qq = latestQuarter;
+  for (let i = 0; i < count; i++) {
+    quarters.push({ year: qy, quarter: qq });
+    qq -= 1;
+    if (qq <= 0) { qy -= 1; qq = 4; }
+  }
+  return quarters;
+}
+
+async function fetchRecentFinancialStatements() {
+  const quarters = getLatestAvailableQuarters(4);
+  let total = 0;
+  for (const { year, quarter } of quarters) {
+    total += await fetchAndSaveFinancialStatements(year, quarter);
+  }
+  return total;
 }
 
 if (require.main === module) {
@@ -306,5 +345,6 @@ if (require.main === module) {
 module.exports = {
   fetchFinancialStatements,
   fetchAndSaveFinancialStatements,
-  fetchRecentFinancialStatements
+  fetchRecentFinancialStatements,
+  getLatestAvailableQuarters
 };
