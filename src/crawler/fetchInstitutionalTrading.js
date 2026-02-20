@@ -109,12 +109,24 @@ async function fetchAndSaveInstitutionalTrading(date) {
 
 /**
  * 抓取最近交易日的法人資料
+ * 先查 DB 是否已有今日資料，有則跳過
  */
 async function fetchRecentInstitutionalTrading() {
   const now = new Date();
   const date = now.getFullYear().toString() +
     String(now.getMonth() + 1).padStart(2, '0') +
     String(now.getDate()).padStart(2, '0');
+  const tradeDate = `${date.slice(0, 4)}-${date.slice(4, 6)}-${date.slice(6, 8)}`;
+
+  const [rows] = await pool.query(
+    'SELECT COUNT(*) AS cnt FROM institutional_trading WHERE trade_date = ?',
+    [tradeDate]
+  );
+  if (rows[0].cnt > 0) {
+    console.log(`${tradeDate} 三大法人資料已存在，跳過`);
+    return 0;
+  }
+
   return await fetchAndSaveInstitutionalTrading(date);
 }
 

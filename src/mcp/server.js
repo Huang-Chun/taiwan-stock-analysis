@@ -513,7 +513,7 @@ server.tool(
           count = await fetchAndSaveMonthlyRevenue(year, month);
         }
       } else {
-        count = await fetchRecentMonthlyRevenue();
+        count = await fetchRecentMonthlyRevenue(stock_id);
       }
       return { content: [{ type: 'text', text: `成功同步 ${count} 筆月營收資料` }] };
     } catch (error) {
@@ -540,6 +540,16 @@ server.tool(
         const quarters = getLatestAvailableQuarters(4);
         const labels = quarters.map(q => `${q.year}Q${q.quarter}`).join(', ');
         for (const { year: qy, quarter: qq } of quarters) {
+          // 查 DB 是否已有此季財報，有則跳過
+          const checkQuery = stock_id
+            ? 'SELECT COUNT(*) AS cnt FROM financial_statements WHERE stock_id = ? AND year = ? AND quarter = ?'
+            : 'SELECT COUNT(*) AS cnt FROM financial_statements WHERE year = ? AND quarter = ?';
+          const checkParams = stock_id ? [stock_id, qy, qq] : [qy, qq];
+          const [existing] = await pool.query(checkQuery, checkParams);
+          if (existing[0].cnt > 0) {
+            console.log(`${qy}Q${qq} 財報已存在，跳過`);
+            continue;
+          }
           count += await fetchAndSaveFinancialStatements(qy, qq, stock_id);
         }
         return { content: [{ type: 'text', text: `成功同步 ${count} 筆財報資料（${labels}）` }] };

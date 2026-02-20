@@ -180,20 +180,47 @@ async function fetchRecentPrices() {
 
 /**
  * 抓取指定股票多個月份的股價資料
+ * 先查 DB 最新日期，只補抓缺少的月份
  * @param {string} stockId - 股票代號
- * @param {number} months - 往回抓幾個月（預設 1，最大 12）
+ * @param {number} months - 最多往回抓幾個月（預設 1，最大 12）
  */
 async function fetchMultiMonthPrices(stockId, months = 1) {
   months = Math.min(Math.max(1, months), 12);
-  console.log(`開始抓取 ${stockId} 近 ${months} 個月股價...`);
+
+  // 查 DB 最新資料日期，決定實際需要抓幾個月
+  const [latestRows] = await pool.query(
+    'SELECT MAX(trade_date) AS latest FROM daily_prices WHERE stock_id = ?',
+    [stockId]
+  );
+  const latestDate = latestRows[0].latest;
+  const now = new Date();
+  let monthsToFetch = months;
+
+  if (latestDate) {
+    const latest = new Date(latestDate);
+    const gap = (now.getFullYear() - latest.getFullYear()) * 12
+              + (now.getMonth() - latest.getMonth());
+    // gap=0 → 本月已有資料，僅更新本月最新交易日
+    // gap=1 → 上月有資料，只需抓本月
+    // gap≥2 → 多個月缺口
+    monthsToFetch = Math.min(gap + 1, months);
+    monthsToFetch = Math.max(monthsToFetch, 1);
+    if (gap === 0) {
+      console.log(`[${stockId}] 資料已是本月，更新本月最新資料`);
+    } else {
+      console.log(`[${stockId}] 資料落後 ${gap} 個月，補抓 ${monthsToFetch} 個月（原請求 ${months} 個月）`);
+    }
+  } else {
+    console.log(`[${stockId}] 無歷史資料，抓取近 ${months} 個月`);
+  }
+
+  console.log(`開始抓取 ${stockId} 近 ${monthsToFetch} 個月股價...`);
 
   const connection = await pool.getConnection();
   let totalRecords = 0;
 
   try {
-    const now = new Date();
-
-    for (let i = 0; i < months; i++) {
+    for (let i = 0; i < monthsToFetch; i++) {
       const targetDate = new Date(now.getFullYear(), now.getMonth() - i, 1);
       const year = targetDate.getFullYear();
       const month = String(targetDate.getMonth() + 1).padStart(2, '0');
@@ -234,7 +261,7 @@ async function fetchMultiMonthPrices(stockId, months = 1) {
       }
 
       // 每月之間加 3 秒延遲避免被 TWSE 封鎖
-      if (i < months - 1) {
+      if (i < monthsToFetch - 1) {
         await new Promise(resolve => setTimeout(resolve, 3000));
       }
     }
