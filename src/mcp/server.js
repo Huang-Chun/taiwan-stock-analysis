@@ -13,6 +13,7 @@ const { fetchAndSaveDividends, fetchRecentDividends } = require('../crawler/fetc
 const { detectAllSignals, scoreStock, screenByStrategy } = require('../analysis/strategies');
 const { analyzeInstitutionalTrend, detectAccumulation, analyzeConsensus, analyzeMarginTrend, screenByInstitutional } = require('../analysis/institutionalAnalysis');
 const { analyzeRevenueTrend, calculateValuation, getFinancialSummary, scoreFundamental } = require('../analysis/fundamentalAnalysis');
+const { getPriceFreshness, getIndicatorFreshness, getInstitutionalFreshness, getMarginFreshness, getRevenueFreshness, getFinancialFreshness, getDividendFreshness } = require('../utils/dataFreshness');
 
 const server = new McpServer({
   name: 'taiwan-stock-analysis',
@@ -80,8 +81,9 @@ server.tool(
         `SELECT * FROM daily_prices WHERE stock_id = ? ORDER BY trade_date DESC LIMIT ?`,
         [stock_id, limit]
       );
+      const _meta = await getPriceFreshness(stock_id);
       return {
-        content: [{ type: 'text', text: JSON.stringify({ count: rows.length, data: rows.reverse() }, null, 2) }],
+        content: [{ type: 'text', text: JSON.stringify({ _meta, count: rows.length, data: rows.reverse() }, null, 2) }],
       };
     } catch (error) {
       return { content: [{ type: 'text', text: `錯誤: ${error.message}` }], isError: true };
@@ -118,7 +120,11 @@ server.tool(
       if (rows.length === 0) {
         return { content: [{ type: 'text', text: `找不到股票 ${stock_id} 的資料` }], isError: true };
       }
-      return { content: [{ type: 'text', text: JSON.stringify(rows[0], null, 2) }] };
+      const [price_meta, indicator_meta] = await Promise.all([
+        getPriceFreshness(stock_id),
+        getIndicatorFreshness(stock_id),
+      ]);
+      return { content: [{ type: 'text', text: JSON.stringify({ _meta: { price_meta, indicator_meta }, ...rows[0] }, null, 2) }] };
     } catch (error) {
       return { content: [{ type: 'text', text: `錯誤: ${error.message}` }], isError: true };
     }
@@ -187,12 +193,15 @@ server.tool(
   },
   async ({ stock_id, days }) => {
     try {
-      const trend = await analyzeInstitutionalTrend(stock_id, days);
-      const consensus = await analyzeConsensus(stock_id);
-      const accumulation = await detectAccumulation(stock_id);
+      const [trend, consensus, accumulation, _meta] = await Promise.all([
+        analyzeInstitutionalTrend(stock_id, days),
+        analyzeConsensus(stock_id),
+        detectAccumulation(stock_id),
+        getInstitutionalFreshness(stock_id),
+      ]);
 
       return {
-        content: [{ type: 'text', text: JSON.stringify({ trend, consensus, accumulation }, null, 2) }],
+        content: [{ type: 'text', text: JSON.stringify({ _meta, trend, consensus, accumulation }, null, 2) }],
       };
     } catch (error) {
       return { content: [{ type: 'text', text: `錯誤: ${error.message}` }], isError: true };
@@ -209,11 +218,14 @@ server.tool(
   },
   async ({ stock_id, days }) => {
     try {
-      const result = await analyzeMarginTrend(stock_id, days);
+      const [result, _meta] = await Promise.all([
+        analyzeMarginTrend(stock_id, days),
+        getMarginFreshness(stock_id),
+      ]);
       if (!result) {
-        return { content: [{ type: 'text', text: `找不到股票 ${stock_id} 的融資融券資料` }] };
+        return { content: [{ type: 'text', text: JSON.stringify({ _meta, error: `找不到股票 ${stock_id} 的融資融券資料` }, null, 2) }] };
       }
-      return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+      return { content: [{ type: 'text', text: JSON.stringify({ _meta, ...result }, null, 2) }] };
     } catch (error) {
       return { content: [{ type: 'text', text: `錯誤: ${error.message}` }], isError: true };
     }
@@ -233,11 +245,14 @@ server.tool(
   },
   async ({ stock_id, months }) => {
     try {
-      const result = await analyzeRevenueTrend(stock_id, months);
+      const [result, _meta] = await Promise.all([
+        analyzeRevenueTrend(stock_id, months),
+        getRevenueFreshness(stock_id),
+      ]);
       if (!result) {
-        return { content: [{ type: 'text', text: `找不到股票 ${stock_id} 的營收資料` }] };
+        return { content: [{ type: 'text', text: JSON.stringify({ _meta, error: `找不到股票 ${stock_id} 的營收資料` }, null, 2) }] };
       }
-      return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+      return { content: [{ type: 'text', text: JSON.stringify({ _meta, ...result }, null, 2) }] };
     } catch (error) {
       return { content: [{ type: 'text', text: `錯誤: ${error.message}` }], isError: true };
     }
@@ -250,8 +265,11 @@ server.tool(
   { stock_id: z.string().describe('股票代號') },
   async ({ stock_id }) => {
     try {
-      const result = await getFinancialSummary(stock_id);
-      return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+      const [result, _meta] = await Promise.all([
+        getFinancialSummary(stock_id),
+        getFinancialFreshness(stock_id),
+      ]);
+      return { content: [{ type: 'text', text: JSON.stringify({ _meta, ...result }, null, 2) }] };
     } catch (error) {
       return { content: [{ type: 'text', text: `錯誤: ${error.message}` }], isError: true };
     }
@@ -264,11 +282,16 @@ server.tool(
   { stock_id: z.string().describe('股票代號') },
   async ({ stock_id }) => {
     try {
-      const result = await calculateValuation(stock_id);
+      const [result, price_meta, financial_meta, dividend_meta] = await Promise.all([
+        calculateValuation(stock_id),
+        getPriceFreshness(stock_id),
+        getFinancialFreshness(stock_id),
+        getDividendFreshness(stock_id),
+      ]);
       if (!result) {
         return { content: [{ type: 'text', text: `找不到股票 ${stock_id} 的估值資料` }] };
       }
-      return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+      return { content: [{ type: 'text', text: JSON.stringify({ _meta: { price_meta, financial_meta, dividend_meta }, ...result }, null, 2) }] };
     } catch (error) {
       return { content: [{ type: 'text', text: `錯誤: ${error.message}` }], isError: true };
     }
