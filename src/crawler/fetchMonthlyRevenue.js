@@ -184,9 +184,12 @@ async function calculateGrowthRates(connection, year, month) {
 
 /**
  * 抓取並存入資料庫
+ * @param {number} year
+ * @param {number} month
+ * @param {string} [stockId] - 指定股票代號（可選）
  */
-async function fetchAndSaveMonthlyRevenue(year, month) {
-  const records = await fetchMonthlyRevenue(year, month);
+async function fetchAndSaveMonthlyRevenue(year, month, stockId) {
+  const records = await fetchMonthlyRevenue(year, month, stockId);
 
   if (records.length === 0) {
     console.log('無資料可寫入');
@@ -232,8 +235,10 @@ async function fetchAndSaveMonthlyRevenue(year, month) {
 
 /**
  * 抓取最近月份的月營收
+ * 先查 DB 是否已有該月資料，有則跳過
+ * @param {string} [stockId] - 指定股票代號（可選）
  */
-async function fetchRecentMonthlyRevenue() {
+async function fetchRecentMonthlyRevenue(stockId) {
   // 月營收通常在次月 10 號後公佈，抓前一個月
   const now = new Date();
   let year = now.getFullYear();
@@ -242,7 +247,19 @@ async function fetchRecentMonthlyRevenue() {
     year -= 1;
     month = 12;
   }
-  return await fetchAndSaveMonthlyRevenue(year, month);
+
+  // 查 DB 是否已有該月資料
+  const checkQuery = stockId
+    ? 'SELECT COUNT(*) AS cnt FROM monthly_revenue WHERE year = ? AND month = ? AND stock_id = ?'
+    : 'SELECT COUNT(*) AS cnt FROM monthly_revenue WHERE year = ? AND month = ?';
+  const checkParams = stockId ? [year, month, stockId] : [year, month];
+  const [rows] = await pool.query(checkQuery, checkParams);
+  if (rows[0].cnt > 0) {
+    console.log(`${year}/${month} 月營收已存在，跳過`);
+    return 0;
+  }
+
+  return await fetchAndSaveMonthlyRevenue(year, month, stockId);
 }
 
 if (require.main === module) {

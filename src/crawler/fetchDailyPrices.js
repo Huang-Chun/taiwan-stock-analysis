@@ -178,6 +178,101 @@ async function fetchRecentPrices() {
   }
 }
 
+/**
+ * 抓取指定股票多個月份的股價資料
+ * 先查 DB 最新日期，只補抓缺少的月份
+ * @param {string} stockId - 股票代號
+ * @param {number} months - 最多往回抓幾個月（預設 1，最大 12）
+ */
+async function fetchMultiMonthPrices(stockId, months = 1) {
+  months = Math.min(Math.max(1, months), 12);
+
+  // 查 DB 最新資料日期，決定實際需要抓幾個月
+  const [latestRows] = await pool.query(
+    'SELECT MAX(trade_date) AS latest FROM daily_prices WHERE stock_id = ?',
+    [stockId]
+  );
+  const latestDate = latestRows[0].latest;
+  const now = new Date();
+  let monthsToFetch = months;
+
+  if (latestDate) {
+    const latest = new Date(latestDate);
+    const gap = (now.getFullYear() - latest.getFullYear()) * 12
+              + (now.getMonth() - latest.getMonth());
+    // gap=0 → 本月已有資料，僅更新本月最新交易日
+    // gap=1 → 上月有資料，只需抓本月
+    // gap≥2 → 多個月缺口
+    monthsToFetch = Math.min(gap + 1, months);
+    monthsToFetch = Math.max(monthsToFetch, 1);
+    if (gap === 0) {
+      console.log(`[${stockId}] 資料已是本月，更新本月最新資料`);
+    } else {
+      console.log(`[${stockId}] 資料落後 ${gap} 個月，補抓 ${monthsToFetch} 個月（原請求 ${months} 個月）`);
+    }
+  } else {
+    console.log(`[${stockId}] 無歷史資料，抓取近 ${months} 個月`);
+  }
+
+  console.log(`開始抓取 ${stockId} 近 ${monthsToFetch} 個月股價...`);
+
+  const connection = await pool.getConnection();
+  let totalRecords = 0;
+
+  try {
+    for (let i = 0; i < monthsToFetch; i++) {
+      const targetDate = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const year = targetDate.getFullYear();
+      const month = String(targetDate.getMonth() + 1).padStart(2, '0');
+      const date = `${year}${month}01`;
+
+      console.log(`  抓取 ${year}/${month} ...`);
+      const records = await fetchDailyPrice(stockId, date);
+
+      if (records && records.length > 0) {
+        for (const record of records) {
+          await connection.query(
+            `INSERT INTO daily_prices
+            (stock_id, trade_date, open_price, high_price, low_price, close_price,
+             volume, turnover, transactions, change_amount, change_percent)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON DUPLICATE KEY UPDATE
+            open_price = VALUES(open_price),
+            high_price = VALUES(high_price),
+            low_price = VALUES(low_price),
+            close_price = VALUES(close_price),
+            volume = VALUES(volume),
+            turnover = VALUES(turnover),
+            transactions = VALUES(transactions),
+            change_amount = VALUES(change_amount),
+            change_percent = VALUES(change_percent)`,
+            [
+              record.stock_id, record.trade_date, record.open_price,
+              record.high_price, record.low_price, record.close_price,
+              record.volume, record.turnover, record.transactions,
+              record.change_amount, record.change_percent
+            ]
+          );
+        }
+        totalRecords += records.length;
+        console.log(`  ✓ ${year}/${month} - ${records.length} 筆`);
+      } else {
+        console.log(`  ✗ ${year}/${month} - 無資料`);
+      }
+
+      // 每月之間加 3 秒延遲避免被 TWSE 封鎖
+      if (i < monthsToFetch - 1) {
+        await new Promise(resolve => setTimeout(resolve, 3000));
+      }
+    }
+
+    console.log(`完成！共抓取 ${totalRecords} 筆資料`);
+    return totalRecords;
+  } finally {
+    connection.release();
+  }
+}
+
 // 如果直接執行此檔案
 if (require.main === module) {
   fetchRecentPrices()
@@ -194,5 +289,6 @@ if (require.main === module) {
 module.exports = {
   fetchDailyPrice,
   fetchBatchDailyPrices,
-  fetchRecentPrices
+  fetchRecentPrices,
+  fetchMultiMonthPrices
 };

@@ -41,7 +41,8 @@
       "mcp__taiwan-stock__calculate_indicators",
       "mcp__taiwan-stock__detect_signals",
       "mcp__taiwan-stock__score_stock",
-      "mcp__taiwan-stock__get_stock_prices"
+      "mcp__taiwan-stock__get_stock_prices",
+      "mcp__taiwan-stock__get_margin_trading"
     ]
   },
   "enableAllProjectMcpServers": true,
