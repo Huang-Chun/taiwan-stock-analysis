@@ -36,19 +36,27 @@ async function fetchInstitutionalTrading(date) {
         return parseInt(str.replace(/,/g, ''), 10) || 0;
       };
 
+      // T86 欄位格式（19欄）:
+      // [0]代號 [1]名稱
+      // [2]外陸資買進 [3]外陸資賣出 [4]外陸資買賣超（不含外資自營商）
+      // [5]外資自營商買進 [6]外資自營商賣出 [7]外資自營商買賣超
+      // [8]投信買進 [9]投信賣出 [10]投信買賣超
+      // [11]自營商買賣超合計 [12]自營商買進(自行) [13]自營商賣出(自行) [14]自營商買賣超(自行)
+      // [15]自營商買進(避險) [16]自營商賣出(避險) [17]自營商買賣超(避險)
+      // [18]三大法人買賣超合計
       records.push({
         stock_id: stockId,
         trade_date: tradeDate,
         foreign_buy: parseNum(row[2]),
         foreign_sell: parseNum(row[3]),
         foreign_net: parseNum(row[4]),
-        trust_buy: parseNum(row[5]),
-        trust_sell: parseNum(row[6]),
-        trust_net: parseNum(row[7]),
-        dealer_net: parseNum(row[8]),   // 自營商合計買賣超
-        dealer_buy: parseNum(row[9]),   // 自營商自行買賣超 (buy side)
-        dealer_sell: parseNum(row[10]), // 自營商自行買賣超 (sell side)
-        total_net: parseNum(row[11])
+        trust_buy: parseNum(row[8]),
+        trust_sell: parseNum(row[9]),
+        trust_net: parseNum(row[10]),
+        dealer_net: parseNum(row[11]),  // 自營商合計買賣超
+        dealer_buy: parseNum(row[12]),  // 自營商自行買進
+        dealer_sell: parseNum(row[13]), // 自營商自行賣出
+        total_net: parseNum(row[18])    // 三大法人買賣超合計
       });
     }
 
@@ -76,7 +84,13 @@ async function fetchAndSaveInstitutionalTrading(date) {
   try {
     await connection.beginTransaction();
 
-    for (const r of records) {
+    // 2026-02-20: 過濾掉 stocks 表不存在的 stock_id，避免 Foreign Key 錯誤
+    const [stockRows] = await connection.query('SELECT stock_id FROM stocks');
+    const validIds = new Set(stockRows.map(r => r.stock_id));
+    const filteredRecords = records.filter(r => validIds.has(r.stock_id));
+    console.log(`過濾後剩 ${filteredRecords.length}/${records.length} 筆（排除非上市股票）`);
+
+    for (const r of filteredRecords) {
       await connection.query(
         `INSERT INTO institutional_trading
         (stock_id, trade_date, foreign_buy, foreign_sell, foreign_net,
@@ -95,8 +109,8 @@ async function fetchAndSaveInstitutionalTrading(date) {
     }
 
     await connection.commit();
-    console.log(`✓ 成功寫入 ${records.length} 筆法人買賣超資料`);
-    return records.length;
+    console.log(`✓ 成功寫入 ${filteredRecords.length} 筆法人買賣超資料`);
+    return filteredRecords.length;
 
   } catch (error) {
     await connection.rollback();
