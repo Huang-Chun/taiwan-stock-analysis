@@ -1,5 +1,6 @@
 const axios = require('axios');
 const { pool } = require('../database/connection');
+const { fetchFinMindData } = require('./finmindApi');
 
 /**
  * 抓取指定日期的三大法人買賣超資料
@@ -144,11 +145,137 @@ async function fetchRecentInstitutionalTrading() {
   return await fetchAndSaveInstitutionalTrading(date);
 }
 
+/**
+ * 用 FinMind 抓單一股票的三大法人買賣超（支援日期區間）
+ * FinMind name 對應：
+ *   Foreign_Investor      → 外陸資（不含外資自營商）→ foreign
+ *   Foreign_Dealer_Self   → 外資自營商（忽略，與 TWSE 一致）
+ *   Investment_Trust      → 投信 → trust
+ *   Dealer                → 自營商(自行買賣) → dealer_buy/sell
+ *   Dealer_Hedging        → 自營商(避險) → dealer_net 的一部分
+ * @param {string} stockId
+ * @param {string} startDate - YYYY-MM-DD
+ * @param {string} endDate   - YYYY-MM-DD
+ * @returns {Array} 排好的 records（舊→新）
+ */
+async function fetchInstitutionalTradingByStockFromFinMind(stockId, startDate, endDate) {
+  console.log(`FinMind 抓取 ${stockId} 法人資料：${startDate} ~ ${endDate}`);
+
+  const data = await fetchFinMindData('TaiwanStockInstitutionalInvestorsBuySell', {
+    data_id: stockId,
+    start_date: startDate,
+    end_date: endDate,
+  });
+
+  // 依日期分組
+  const byDate = {};
+  for (const row of data) {
+    if (!byDate[row.date]) byDate[row.date] = {};
+    byDate[row.date][row.name] = { buy: row.buy || 0, sell: row.sell || 0 };
+  }
+
+  const records = [];
+  for (const [date, inv] of Object.entries(byDate)) {
+    const foreign   = inv['Foreign_Investor']   || { buy: 0, sell: 0 };
+    const trust     = inv['Investment_Trust']    || { buy: 0, sell: 0 };
+    const dealer    = inv['Dealer_self']         || { buy: 0, sell: 0 };
+    const dealerHedge = inv['Dealer_Hedging']   || { buy: 0, sell: 0 };
+
+    const foreign_net   = foreign.buy - foreign.sell;
+    const trust_net     = trust.buy - trust.sell;
+    const dealer_self_net = dealer.buy - dealer.sell;
+    const dealer_hedge_net = dealerHedge.buy - dealerHedge.sell;
+    const dealer_net    = dealer_self_net + dealer_hedge_net;
+    const total_net     = foreign_net + trust_net + dealer_net;
+
+    records.push({
+      stock_id:    stockId,
+      trade_date:  date,
+      foreign_buy: foreign.buy,
+      foreign_sell: foreign.sell,
+      foreign_net,
+      trust_buy:   trust.buy,
+      trust_sell:  trust.sell,
+      trust_net,
+      dealer_buy:  dealer.buy,
+      dealer_sell: dealer.sell,
+      dealer_net,
+      total_net,
+    });
+  }
+
+  return records.sort((a, b) => a.trade_date.localeCompare(b.trade_date));
+}
+
+/**
+ * 抓取並儲存單一股票近 N 天的三大法人資料（使用 FinMind）
+ * @param {string} stockId
+ * @param {number} days - 往回幾天（日曆天），預設 60 以涵蓋約 40 個交易日
+ */
+async function fetchAndSaveInstitutionalTradingForStock(stockId, days = 60) {
+  const endDate = new Date();
+  const startDate = new Date();
+  startDate.setDate(endDate.getDate() - days);
+
+  const fmt = d => d.toISOString().slice(0, 10);
+  const records = await fetchInstitutionalTradingByStockFromFinMind(stockId, fmt(startDate), fmt(endDate));
+
+  if (records.length === 0) {
+    console.log(`${stockId} 無法人資料可寫入`);
+    return 0;
+  }
+
+  const connection = await pool.getConnection();
+  try {
+    await connection.beginTransaction();
+    for (const r of records) {
+      await connection.query(
+        `INSERT INTO institutional_trading
+        (stock_id, trade_date, foreign_buy, foreign_sell, foreign_net,
+         trust_buy, trust_sell, trust_net, dealer_buy, dealer_sell, dealer_net, total_net)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON DUPLICATE KEY UPDATE
+        foreign_buy = VALUES(foreign_buy), foreign_sell = VALUES(foreign_sell),
+        foreign_net = VALUES(foreign_net), trust_buy = VALUES(trust_buy),
+        trust_sell = VALUES(trust_sell), trust_net = VALUES(trust_net),
+        dealer_buy = VALUES(dealer_buy), dealer_sell = VALUES(dealer_sell),
+        dealer_net = VALUES(dealer_net), total_net = VALUES(total_net)`,
+        [r.stock_id, r.trade_date, r.foreign_buy, r.foreign_sell, r.foreign_net,
+         r.trust_buy, r.trust_sell, r.trust_net, r.dealer_buy, r.dealer_sell,
+         r.dealer_net, r.total_net]
+      );
+    }
+    await connection.commit();
+    console.log(`✓ ${stockId} 成功寫入 ${records.length} 筆法人資料`);
+    return records.length;
+  } catch (error) {
+    await connection.rollback();
+    throw error;
+  } finally {
+    connection.release();
+  }
+}
+
 if (require.main === module) {
-  const dateArg = process.argv[2];
-  const fn = dateArg
-    ? () => fetchAndSaveInstitutionalTrading(dateArg)
-    : fetchRecentInstitutionalTrading;
+  // 用法：
+  //   node fetchInstitutionalTrading.js                  → 抓今日全市場
+  //   node fetchInstitutionalTrading.js 20260211         → 抓指定日期全市場
+  //   node fetchInstitutionalTrading.js 3017             → 抓單股近 60 天
+  //   node fetchInstitutionalTrading.js 3017 30          → 抓單股近 30 天
+  const arg1 = process.argv[2];
+  const arg2 = process.argv[3];
+
+  let fn;
+  if (arg1 && /^\d{4}$/.test(arg1)) {
+    // 4 碼 → 股票代號
+    const days = parseInt(arg2) || 60;
+    fn = () => fetchAndSaveInstitutionalTradingForStock(arg1, days);
+  } else if (arg1) {
+    // 8 碼 → 日期
+    fn = () => fetchAndSaveInstitutionalTrading(arg1);
+  } else {
+    fn = fetchRecentInstitutionalTrading;
+  }
 
   fn()
     .then(() => { console.log('完成！'); process.exit(0); })
@@ -158,5 +285,7 @@ if (require.main === module) {
 module.exports = {
   fetchInstitutionalTrading,
   fetchAndSaveInstitutionalTrading,
-  fetchRecentInstitutionalTrading
+  fetchRecentInstitutionalTrading,
+  fetchInstitutionalTradingByStockFromFinMind,
+  fetchAndSaveInstitutionalTradingForStock,
 };

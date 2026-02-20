@@ -5,7 +5,7 @@ const { pool } = require('../database/connection');
 const { fetchStockList } = require('../crawler/fetchStockList');
 const { fetchRecentPrices, fetchBatchDailyPrices, fetchMultiMonthPrices } = require('../crawler/fetchDailyPrices');
 const { calculateIndicatorsForStock, calculateAllIndicators } = require('../analysis/calculateIndicators');
-const { fetchAndSaveInstitutionalTrading, fetchRecentInstitutionalTrading } = require('../crawler/fetchInstitutionalTrading');
+const { fetchAndSaveInstitutionalTrading, fetchRecentInstitutionalTrading, fetchAndSaveInstitutionalTradingForStock } = require('../crawler/fetchInstitutionalTrading');
 const { fetchAndSaveMarginTrading, fetchRecentMarginTrading } = require('../crawler/fetchMarginTrading');
 const { fetchAndSaveMonthlyRevenue, fetchRecentMonthlyRevenue } = require('../crawler/fetchMonthlyRevenue');
 const { fetchAndSaveFinancialStatements, fetchRecentFinancialStatements, getLatestAvailableQuarters } = require('../crawler/fetchFinancialStatements');
@@ -439,14 +439,18 @@ server.tool(
 
 server.tool(
   'sync_institutional_trading',
-  '抓取三大法人買賣超資料',
+  '抓取三大法人買賣超資料。指定 stock_id 時用 FinMind 抓單股多日；否則用 TWSE 抓指定日期全市場',
   {
-    date: z.string().optional().describe('日期 YYYYMMDD 格式,不填則抓取最近交易日'),
+    date: z.string().optional().describe('日期 YYYYMMDD 格式（全市場模式），不填則抓最近交易日'),
+    stock_id: z.string().optional().describe('股票代號，填入時改用 FinMind 抓該股近期資料'),
+    days: z.number().optional().default(60).describe('stock_id 模式下往回幾天（日曆天），預設 60'),
   },
-  async ({ date }) => {
+  async ({ date, stock_id, days }) => {
     try {
       let count;
-      if (date) {
+      if (stock_id) {
+        count = await fetchAndSaveInstitutionalTradingForStock(stock_id, days);
+      } else if (date) {
         count = await fetchAndSaveInstitutionalTrading(date);
       } else {
         count = await fetchRecentInstitutionalTrading();
