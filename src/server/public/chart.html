@@ -1,0 +1,910 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>台股分析</title>
+  <script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
+  <style>
+    *, *::before, *::after { margin:0; padding:0; box-sizing:border-box; }
+
+    :root {
+      --bg:       #0d1117;
+      --bg2:      #161b22;
+      --bg3:      #21262d;
+      --border:   #30363d;
+      --text:     #e6edf3;
+      --muted:    #8b949e;
+      --blue:     #58a6ff;
+      --green:    #3fb950;
+      --red:      #f85149;
+      --yellow:   #e3b341;
+      --purple:   #bc8cff;
+      --orange:   #f0a070;
+      --radius:   10px;
+    }
+
+    body { font-family:'Microsoft JhengHei',Arial,sans-serif; background:var(--bg); color:var(--text); min-height:100vh; }
+
+    /* ── Topbar ── */
+    .topbar {
+      display:flex; align-items:center; gap:12px;
+      padding:10px 20px; background:var(--bg2);
+      border-bottom:1px solid var(--border); position:sticky; top:0; z-index:100;
+    }
+    .topbar a { color:var(--muted); text-decoration:none; font-size:13px; white-space:nowrap; }
+    .topbar a:hover { color:var(--blue); }
+    .search-wrap { display:flex; gap:8px; margin-left:auto; }
+    #stockInput {
+      background:var(--bg); border:1px solid var(--border);
+      color:var(--text); padding:6px 12px; border-radius:6px;
+      font-size:14px; width:130px; outline:none;
+    }
+    #stockInput:focus { border-color:var(--blue); }
+    .btn {
+      padding:6px 14px; border-radius:6px; border:1px solid var(--border);
+      background:var(--bg3); color:var(--text); cursor:pointer;
+      font-size:13px; transition:background .15s; white-space:nowrap;
+    }
+    .btn:hover { background:var(--border); }
+    .btn.active { background:#1f6feb; border-color:#1f6feb; color:#fff; }
+    #syncStatus { padding:5px 20px; font-size:12px; background:var(--bg2); border-bottom:1px solid var(--border); display:none; }
+
+    /* ── Stock Header ── */
+    .stock-header {
+      padding:16px 20px 12px;
+      border-bottom:1px solid var(--border);
+      display:flex; align-items:flex-start; justify-content:space-between; flex-wrap:wrap; gap:12px;
+    }
+    .header-left { display:flex; flex-direction:column; gap:6px; }
+    .header-title { display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; }
+    #stockName { font-size:22px; font-weight:700; }
+    #stockCode { font-size:14px; color:var(--muted); }
+    .tags { display:flex; gap:6px; flex-wrap:wrap; }
+    .tag {
+      font-size:11px; padding:2px 8px; border-radius:4px;
+      background:var(--bg3); border:1px solid var(--border); color:var(--muted);
+    }
+    .price-row { display:flex; align-items:baseline; gap:12px; flex-wrap:wrap; }
+    #closePrice { font-size:32px; font-weight:700; }
+    #changeBadge { font-size:15px; font-weight:600; padding:3px 10px; border-radius:6px; }
+    #ohlcRow { font-size:13px; color:var(--muted); }
+
+    .header-right { display:flex; gap:12px; align-items:center; }
+    .score-group { display:flex; gap:10px; }
+    .score-badge {
+      display:flex; flex-direction:column; align-items:center;
+      background:var(--bg3); border:1px solid var(--border);
+      border-radius:var(--radius); padding:8px 14px; min-width:70px;
+    }
+    .score-badge .score-val { font-size:22px; font-weight:700; }
+    .score-badge .score-lbl { font-size:10px; color:var(--muted); margin-top:2px; }
+
+    .up   { color:var(--red); }
+    .down { color:var(--green); }
+    .flat { color:var(--muted); }
+    .up-bg   { background:rgba(248,81,73,.15); color:var(--red); }
+    .down-bg { background:rgba(63,185,80,.15); color:var(--green); }
+    .flat-bg { background:var(--bg3); color:var(--muted); }
+
+    /* ── Chart Controls ── */
+    .chart-controls {
+      display:flex; align-items:center; gap:16px; flex-wrap:wrap;
+      padding:10px 20px; border-bottom:1px solid var(--border); background:var(--bg2);
+    }
+    .period-bar { display:flex; gap:5px; }
+    .legend-bar { display:flex; gap:14px; font-size:12px; color:var(--muted); flex-wrap:wrap; }
+    .ldot { display:inline-block; width:20px; height:3px; border-radius:2px; margin-right:4px; vertical-align:middle; }
+
+    /* ── Charts ── */
+    .chart-block { padding:0 4px; background:var(--bg); }
+    #klineChart   { width:100%; height:440px; }
+    #volumeChart  { width:100%; height:110px; }
+    #rsiChart     { width:100%; height:100px; }
+    #macdChart    { width:100%; height:110px; }
+    #kdChart      { width:100%; height:100px; }
+
+    /* ── Section ── */
+    .section { padding:20px 20px 0; }
+    .section-title {
+      font-size:15px; font-weight:600; color:var(--text);
+      margin-bottom:14px; padding-bottom:10px;
+      border-bottom:1px solid var(--border);
+      display:flex; align-items:center; gap:8px;
+    }
+    .section-title::before {
+      content:''; display:inline-block;
+      width:3px; height:16px; background:var(--blue); border-radius:2px;
+    }
+
+    /* ── Indicator Cards ── */
+    .cards-grid {
+      display:grid;
+      grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+      gap:10px; margin-bottom:20px;
+    }
+    .icard {
+      background:var(--bg2); border:1px solid var(--border);
+      border-radius:var(--radius); padding:12px 14px;
+    }
+    .icard-label { font-size:11px; color:var(--muted); margin-bottom:4px; }
+    .icard-value { font-size:20px; font-weight:700; }
+    .icard-sub   { font-size:11px; color:var(--muted); margin-top:4px; }
+    .icard-bar   { height:4px; border-radius:2px; background:var(--bg3); margin-top:8px; overflow:hidden; }
+    .icard-bar-fill { height:100%; border-radius:2px; transition:width .4s; }
+
+    /* ── Signal Tags ── */
+    .signals-wrap { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:20px; min-height:32px; }
+    .signal-tag {
+      font-size:12px; padding:4px 10px; border-radius:20px;
+      border:1px solid; font-weight:500;
+    }
+    .signal-tag.bull { background:rgba(63,185,80,.12); border-color:rgba(63,185,80,.4); color:var(--green); }
+    .signal-tag.bear { background:rgba(248,81,73,.12); border-color:rgba(248,81,73,.4); color:var(--red); }
+    .signal-tag.neutral { background:var(--bg3); border-color:var(--border); color:var(--muted); }
+    .no-signal { font-size:13px; color:var(--muted); padding:4px 0; }
+
+    /* ── Institutional ── */
+    .inst-cards { display:grid; grid-template-columns:repeat(auto-fill,minmax(180px,1fr)); gap:10px; margin-bottom:16px; }
+    .inst-card {
+      background:var(--bg2); border:1px solid var(--border);
+      border-radius:var(--radius); padding:14px;
+    }
+    .inst-card-title { font-size:12px; color:var(--muted); margin-bottom:6px; }
+    .inst-card-net { font-size:18px; font-weight:700; }
+    .inst-card-detail { font-size:11px; color:var(--muted); margin-top:4px; }
+    #instChart { width:100%; height:200px; }
+
+    /* ── Revenue ── */
+    #revenueChart { width:100%; height:220px; }
+    .rev-summary { display:flex; gap:20px; margin-bottom:12px; flex-wrap:wrap; }
+    .rev-item { font-size:13px; }
+    .rev-item span { color:var(--muted); font-size:12px; }
+
+    /* ── Financial Table ── */
+    .fin-table-wrap { overflow-x:auto; margin-bottom:20px; }
+    .fin-table {
+      width:100%; border-collapse:collapse; font-size:13px; min-width:600px;
+    }
+    .fin-table th {
+      background:var(--bg3); color:var(--muted); font-weight:500;
+      padding:8px 12px; text-align:right; border-bottom:1px solid var(--border);
+      white-space:nowrap;
+    }
+    .fin-table th:first-child { text-align:left; }
+    .fin-table td {
+      padding:8px 12px; text-align:right; border-bottom:1px solid var(--border);
+      white-space:nowrap;
+    }
+    .fin-table td:first-child { text-align:left; color:var(--muted); }
+    .fin-table tr:hover td { background:var(--bg3); }
+    .fin-table .good { color:var(--green); }
+    .fin-table .bad  { color:var(--red); }
+
+    /* ── Valuation Cards ── */
+    .val-cards { display:grid; grid-template-columns:repeat(auto-fill,minmax(140px,1fr)); gap:10px; margin-bottom:24px; }
+    .val-card {
+      background:var(--bg2); border:1px solid var(--border);
+      border-radius:var(--radius); padding:14px; text-align:center;
+    }
+    .val-card-label { font-size:11px; color:var(--muted); margin-bottom:6px; }
+    .val-card-value { font-size:22px; font-weight:700; }
+    .val-card-sub   { font-size:11px; color:var(--muted); margin-top:4px; }
+
+    /* ── Divider ── */
+    .divider { height:1px; background:var(--border); margin:4px 0; }
+
+    /* ── Loading / Error ── */
+    #mainMsg { text-align:center; padding:60px 20px; color:var(--muted); font-size:15px; display:none; }
+    .placeholder { color:var(--muted); font-size:13px; padding:20px 0; }
+
+    @media(max-width:600px){
+      .header-right { display:none; }
+      #klineChart { height:300px; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- Topbar -->
+<div class="topbar">
+  <a href="/">← 台股分析系統</a>
+  <div class="search-wrap">
+    <input id="stockInput" type="text" placeholder="股票代號" value="2330" maxlength="6">
+    <button class="btn" onclick="loadStock()">查詢</button>
+    <button class="btn" id="syncBtn" onclick="syncAll()">↻ 更新</button>
+  </div>
+</div>
+<div id="syncStatus"></div>
+
+<!-- Stock Header -->
+<div class="stock-header">
+  <div class="header-left">
+    <div class="header-title">
+      <span id="stockName">—</span>
+      <span id="stockCode" style="color:var(--muted);font-size:15px"></span>
+    </div>
+    <div class="tags" id="stockTags"></div>
+    <div class="price-row">
+      <span id="closePrice">—</span>
+      <span id="changeBadge"></span>
+      <span id="ohlcRow"></span>
+    </div>
+  </div>
+  <div class="header-right">
+    <div class="score-group" id="scoreGroup"></div>
+  </div>
+</div>
+
+<!-- Chart Controls -->
+<div class="chart-controls">
+  <div class="period-bar">
+    <button class="btn" data-days="20"  onclick="setPeriod(this)">1M</button>
+    <button class="btn active" data-days="60"  onclick="setPeriod(this)">3M</button>
+    <button class="btn" data-days="120" onclick="setPeriod(this)">6M</button>
+    <button class="btn" data-days="240" onclick="setPeriod(this)">1Y</button>
+  </div>
+  <div class="legend-bar">
+    <span><span class="ldot" style="background:#e3b341"></span>MA5</span>
+    <span><span class="ldot" style="background:#f0a070"></span>MA10</span>
+    <span><span class="ldot" style="background:#58a6ff"></span>MA20</span>
+    <span><span class="ldot" style="background:#bc8cff"></span>MA60</span>
+    <span style="color:var(--border)">|</span>
+    <span><span class="ldot" style="background:#e3b341"></span>VMA5</span>
+    <span><span class="ldot" style="background:#58a6ff"></span>VMA20</span>
+  </div>
+</div>
+
+<!-- Charts -->
+<div id="mainMsg">載入中...</div>
+<div class="chart-block" id="chartBlock">
+  <div id="klineChart"></div>
+  <div id="volumeChart"></div>
+  <div id="rsiChart"></div>
+  <div id="kdChart"></div>
+  <div id="macdChart"></div>
+</div>
+
+<!-- ───── Technical Indicators ───── -->
+<div class="section">
+  <div class="section-title">技術指標</div>
+  <div class="cards-grid" id="indicatorCards">
+    <div class="placeholder">載入中...</div>
+  </div>
+</div>
+
+<!-- ───── Signals ───── -->
+<div class="section">
+  <div class="section-title">交易訊號</div>
+  <div class="signals-wrap" id="signalsWrap">
+    <span class="no-signal">載入中...</span>
+  </div>
+</div>
+
+<!-- ───── Institutional ───── -->
+<div class="section">
+  <div class="section-title">三大法人（近20日）</div>
+  <div class="inst-cards" id="instCards">
+    <div class="placeholder">載入中...</div>
+  </div>
+  <div class="chart-block" style="padding:0;margin-bottom:20px">
+    <div id="instChart"></div>
+  </div>
+</div>
+
+<!-- ───── Revenue ───── -->
+<div class="section">
+  <div class="section-title">月營收</div>
+  <div class="rev-summary" id="revSummary"></div>
+  <div class="chart-block" style="padding:0;margin-bottom:20px">
+    <div id="revenueChart"></div>
+  </div>
+</div>
+
+<!-- ───── Financial & Valuation ───── -->
+<div class="section">
+  <div class="section-title">估值指標</div>
+  <div class="val-cards" id="valCards">
+    <div class="placeholder">載入中...</div>
+  </div>
+</div>
+
+<div class="section">
+  <div class="section-title">財報摘要（近四季）</div>
+  <div class="fin-table-wrap" id="finTableWrap">
+    <div class="placeholder">載入中...</div>
+  </div>
+</div>
+<div style="height:40px"></div>
+
+<script>
+/* ══════════════════════════════
+   State
+══════════════════════════════ */
+let currentDays = 60;
+let currentStockId = new URLSearchParams(location.search).get('id') || '2330';
+document.getElementById('stockInput').value = currentStockId;
+
+/* ══════════════════════════════
+   ECharts init
+══════════════════════════════ */
+const klineChart  = echarts.init(document.getElementById('klineChart'),  'dark');
+const volumeChart = echarts.init(document.getElementById('volumeChart'), 'dark');
+const rsiChart    = echarts.init(document.getElementById('rsiChart'),    'dark');
+const kdChart     = echarts.init(document.getElementById('kdChart'),     'dark');
+const macdChart   = echarts.init(document.getElementById('macdChart'),   'dark');
+const instChart   = echarts.init(document.getElementById('instChart'),   'dark');
+const revChart    = echarts.init(document.getElementById('revenueChart'),'dark');
+
+echarts.connect([klineChart, volumeChart, rsiChart, kdChart, macdChart]);
+
+window.addEventListener('resize', () => {
+  [klineChart,volumeChart,rsiChart,kdChart,macdChart,instChart,revChart].forEach(c=>c.resize());
+});
+
+/* ══════════════════════════════
+   Helpers
+══════════════════════════════ */
+const fmt  = (n,d=2) => n==null ? '—' : Number(n).toLocaleString('zh-TW',{minimumFractionDigits:d,maximumFractionDigits:d});
+const fmtB = n => { if(n==null) return '—'; const a=Math.abs(n); return (n<0?'-':'+')+( a>=1e8?(a/1e8).toFixed(2)+'億' : a>=1e4?(a/1e4).toFixed(0)+'萬' : a.toLocaleString() ); };
+const fmtM = n => n==null?'—': (Math.abs(n)>=1e8?(n/1e8).toFixed(2)+'億': Math.abs(n)>=1e4?(n/1e4).toFixed(0)+'萬': Number(n).toLocaleString());
+const scoreColor = s => s==null?'var(--muted)': s>=70?'var(--green)': s>=50?'var(--yellow)': 'var(--red)';
+
+function calcVMA(vol, n) {
+  return vol.map((_,i)=>{ if(i<n-1)return null; const s=vol.slice(i-n+1,i+1).reduce((a,b)=>a+(b||0),0); return Math.round(s/n); });
+}
+
+const DARK_OPTS = { backgroundColor:'#0d1117' };
+
+/* ══════════════════════════════
+   Period / Search
+══════════════════════════════ */
+function setPeriod(btn) {
+  document.querySelectorAll('.period-bar .btn').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  currentDays = parseInt(btn.dataset.days);
+  loadCharts();
+}
+
+function loadStock() {
+  const v = document.getElementById('stockInput').value.trim();
+  if (!v) return;
+  currentStockId = v;
+  history.replaceState(null,'',`?id=${v}`);
+  loadAll();
+}
+
+document.getElementById('stockInput').addEventListener('keydown', e => { if(e.key==='Enter') loadStock(); });
+
+/* ══════════════════════════════
+   Main Load
+══════════════════════════════ */
+async function loadAll() {
+  showMsg('載入中...');
+  try {
+    const [infoRes, klineRes, indRes] = await Promise.all([
+      fetch(`/api/stocks/${currentStockId}`),
+      fetch(`/api/stocks/${currentStockId}/kline?days=${currentDays}`),
+      fetch(`/api/stocks/${currentStockId}/indicators?days=${currentDays+30}`)
+    ]);
+    const info  = await infoRes.json();
+    const kline = await klineRes.json();
+    const ind   = await indRes.json();
+
+    if (!kline.success) { showMsg('查無資料：' + currentStockId); return; }
+    hideMsg();
+
+    renderHeader(info.data, kline.data);
+    renderCharts(kline.data, ind.data);
+
+    // 後續區塊非同步載入
+    loadLatest();
+    loadSignals();
+    loadScore();
+    loadInstitutional();
+    loadRevenue();
+    loadFinancial();
+    loadValuation();
+  } catch(e) { showMsg('載入失敗：' + e.message); }
+}
+
+async function loadCharts() {
+  try {
+    const [klineRes, indRes] = await Promise.all([
+      fetch(`/api/stocks/${currentStockId}/kline?days=${currentDays}`),
+      fetch(`/api/stocks/${currentStockId}/indicators?days=${currentDays+30}`)
+    ]);
+    const kline = await klineRes.json();
+    const ind   = await indRes.json();
+    if (kline.success) renderCharts(kline.data, ind.data);
+  } catch(e) {}
+}
+
+/* ══════════════════════════════
+   Header
+══════════════════════════════ */
+function renderHeader(info, kline) {
+  const ohlcv = kline.ohlcv.map(r=>r.map(v=>v!=null?parseFloat(v):null));
+  const last  = ohlcv[ohlcv.length-1]; // [open,close,low,high]
+  const close = last[1];
+  const chgPct = parseFloat(kline.change_percent[kline.change_percent.length-1]);
+  const chgAmt = last[1]-last[0]; // approximation; overridden by actual later
+  const isUp = chgPct >= 0;
+
+  document.getElementById('stockName').textContent = info ? info.stock_name : currentStockId;
+  document.getElementById('stockCode').textContent = currentStockId;
+  document.getElementById('closePrice').textContent = fmt(close);
+  document.getElementById('closePrice').className = isUp ? 'up' : 'down';
+
+  const badge = document.getElementById('changeBadge');
+  badge.textContent = isNaN(chgPct) ? '' : `${isUp?'+':''}${chgPct.toFixed(2)}%`;
+  badge.className = 'changeBadge ' + (isUp ? 'up-bg' : 'down-bg');
+
+  document.getElementById('ohlcRow').textContent =
+    `開 ${fmt(last[0])}　高 ${fmt(last[3])}　低 ${fmt(last[2])}`;
+
+  const tags = document.getElementById('stockTags');
+  tags.innerHTML = '';
+  if (info) {
+    if (info.market_type) tags.innerHTML += `<span class="tag">${info.market_type}</span>`;
+    if (info.industry)    tags.innerHTML += `<span class="tag">${info.industry}</span>`;
+  }
+  document.title = `${info?.stock_name||currentStockId} ${currentStockId} - 台股分析`;
+}
+
+/* ══════════════════════════════
+   Charts
+══════════════════════════════ */
+function renderCharts(kline, ind) {
+  const d = kline;
+  d.ohlcv          = d.ohlcv.map(r=>r.map(v=>v!=null?parseFloat(v):null));
+  d.volume         = d.volume.map(v=>v!=null?parseFloat(v):null);
+  d.change_percent = d.change_percent.map(v=>v!=null?parseFloat(v):null);
+  d.ma5  = d.ma5.map(v=>v!=null?parseFloat(v):null);
+  d.ma10 = d.ma10.map(v=>v!=null?parseFloat(v):null);
+  d.ma20 = d.ma20.map(v=>v!=null?parseFloat(v):null);
+  d.ma60 = d.ma60.map(v=>v!=null?parseFloat(v):null);
+
+  const signals = kline.signals || [];
+  const markPoints = signals.map(s=>{
+    const idx = d.dates.indexOf(s.date); if(idx===-1)return null;
+    const [o,c,low,high]=d.ohlcv[idx]; const isG=s.type==='golden_cross';
+    return { coord:[idx,isG?low:high], value:s.label, symbolOffset:[0,isG?'60%':'-60%'],
+      symbol:'arrow', symbolRotate:isG?0:180, symbolSize:14,
+      itemStyle:{color:isG?'#3fb950':'#f85149'},
+      label:{show:true,formatter:s.label,fontSize:10,color:'#fff',offset:isG?[0,14]:[0,-14]} };
+  }).filter(Boolean);
+
+  const dataZoomShared = [
+    { type:'inside', xAxisIndex:[0], start:0, end:100 },
+    { type:'slider',  xAxisIndex:[0], start:0, end:100, bottom:2, height:20,
+      fillerColor:'rgba(31,111,235,.15)', borderColor:'#30363d', textStyle:{color:'#8b949e'} }
+  ];
+  const dataZoomLinked = [
+    { type:'inside', xAxisIndex:[0], start:0, end:100 },
+    { type:'slider',  xAxisIndex:[0], show:false }
+  ];
+
+  // --- K-line ---
+  klineChart.setOption({ ...DARK_OPTS, animation:false,
+    grid:{ left:60,right:16,top:16,bottom:48 },
+    xAxis:{ type:'category', data:d.dates, axisLine:{lineStyle:{color:'#30363d'}},
+      axisLabel:{color:'#8b949e',fontSize:11,formatter:v=>v.slice(5)}, splitLine:{show:false} },
+    yAxis:{ scale:true, axisLine:{lineStyle:{color:'#30363d'}},
+      axisLabel:{color:'#8b949e',fontSize:11}, splitLine:{lineStyle:{color:'#21262d'}} },
+    tooltip:{ trigger:'axis', axisPointer:{type:'cross',crossStyle:{color:'#555'}},
+      backgroundColor:'#161b22', borderColor:'#30363d', textStyle:{color:'#e6edf3',fontSize:12},
+      formatter:params=>{
+        const c=params.find(p=>p.seriesName==='K線'); if(!c)return '';
+        const [o,cl,l,h]=c.value; const color=cl>=o?'#f85149':'#3fb950';
+        let html=`<div style="margin-bottom:4px;color:#8b949e">${c.axisValue}</div>`;
+        html+=`<div>開<b style="color:${color};margin-left:6px">${o}</b>　高<b style="color:${color}">${h}</b></div>`;
+        html+=`<div>低<b style="color:${color};margin-left:6px">${l}</b>　收<b style="color:${color}">${cl}</b></div>`;
+        params.filter(p=>p.seriesName!=='K線').forEach(p=>{
+          if(p.value!=null) html+=`<div><span style="display:inline-block;width:10px;height:3px;background:${p.color};margin-right:4px;border-radius:2px"></span>${p.seriesName} <b>${p.value}</b></div>`;
+        }); return html;
+      }
+    },
+    dataZoom: dataZoomShared,
+    series:[
+      { name:'K線', type:'candlestick', data:d.ohlcv,
+        itemStyle:{color:'#f85149',color0:'#3fb950',borderColor:'#f85149',borderColor0:'#3fb950'},
+        markPoint:{data:markPoints,animation:false} },
+      maL('MA5',d.ma5,'#e3b341'), maL('MA10',d.ma10,'#f0a070'), maL('MA20',d.ma20,'#58a6ff'), maL('MA60',d.ma60,'#bc8cff')
+    ]
+  }, true);
+
+  // --- Volume ---
+  const colors = d.ohlcv.map(([o,c])=>c>=o?'#f85149':'#3fb950');
+  volumeChart.setOption({ ...DARK_OPTS, animation:false,
+    grid:{left:60,right:16,top:4,bottom:6},
+    xAxis:{type:'category',data:d.dates,axisLabel:{show:false},axisLine:{lineStyle:{color:'#30363d'}},splitLine:{show:false}},
+    yAxis:{axisLabel:{color:'#8b949e',fontSize:10,formatter:v=>v>=1e8?(v/1e8).toFixed(0)+'億':v>=1e4?(v/1e4).toFixed(0)+'萬':v},
+      axisLine:{lineStyle:{color:'#30363d'}}, splitLine:{lineStyle:{color:'#21262d'}}},
+    tooltip:{trigger:'axis',backgroundColor:'#161b22',borderColor:'#30363d',textStyle:{color:'#e6edf3',fontSize:12},
+      formatter:p=>{const b=p[0]; return `${b.axisValue}<br/>成交量 <b>${Number(b.value).toLocaleString()}</b>`;}},
+    dataZoom: dataZoomLinked,
+    series:[
+      {type:'bar',data:d.volume,itemStyle:{color:p=>colors[p.dataIndex]+'99'}},
+      {name:'VMA5',type:'line',data:calcVMA(d.volume,5),symbol:'none',lineStyle:{color:'#e3b341',width:1.2},connectNulls:false},
+      {name:'VMA20',type:'line',data:calcVMA(d.volume,20),symbol:'none',lineStyle:{color:'#58a6ff',width:1.2},connectNulls:false},
+    ]
+  }, true);
+
+  // --- RSI (from indicator history if available) ---
+  const indDates = ind?.dates || [];
+  const rsiData  = alignSeries(d.dates, indDates, ind?.rsi || []);
+  rsiChart.setOption({ ...DARK_OPTS, animation:false,
+    grid:{left:60,right:16,top:4,bottom:6},
+    xAxis:{type:'category',data:d.dates,axisLabel:{show:false},axisLine:{lineStyle:{color:'#30363d'}},splitLine:{show:false}},
+    yAxis:{min:0,max:100,splitNumber:2,axisLabel:{color:'#8b949e',fontSize:10},axisLine:{lineStyle:{color:'#30363d'}},
+      splitLine:{lineStyle:{color:'#21262d'}}},
+    tooltip:{trigger:'axis',backgroundColor:'#161b22',borderColor:'#30363d',textStyle:{color:'#e6edf3',fontSize:12},
+      formatter:p=>{const v=p[0]?.value; return `${p[0].axisValue}<br/>RSI <b style="color:${v>=70?'#f85149':v<=30?'#3fb950':'#e6edf3'}">${v!=null?v.toFixed(1):'—'}</b>`;} },
+    markLine:{ silent:true, symbol:'none', lineStyle:{color:'#30363d',type:'dashed'},
+      data:[{yAxis:70,label:{formatter:'超買',color:'#f85149',fontSize:10}},{yAxis:30,label:{formatter:'超賣',color:'#3fb950',fontSize:10}}] },
+    dataZoom: dataZoomLinked,
+    series:[{ name:'RSI', type:'line', data:rsiData, symbol:'none',
+      lineStyle:{color:'#e3b341',width:1.5},
+      itemStyle:{color:p=>p.value>=70?'#f85149':p.value<=30?'#3fb950':'#e3b341'},
+      markLine:{silent:true,symbol:'none',lineStyle:{type:'dashed',color:'#30363d'},
+        data:[{yAxis:70},{yAxis:30}]}, connectNulls:false
+    }]
+  }, true);
+
+  // --- KD ---
+  const kdKData = alignSeries(d.dates, indDates, ind?.kd_k || []);
+  const kdDData = alignSeries(d.dates, indDates, ind?.kd_d || []);
+  kdChart.setOption({ ...DARK_OPTS, animation:false,
+    grid:{left:60,right:16,top:4,bottom:6},
+    xAxis:{type:'category',data:d.dates,axisLabel:{show:false},axisLine:{lineStyle:{color:'#30363d'}},splitLine:{show:false}},
+    yAxis:{min:0,max:100,splitNumber:2,axisLabel:{color:'#8b949e',fontSize:10},axisLine:{lineStyle:{color:'#30363d'}},splitLine:{lineStyle:{color:'#21262d'}}},
+    tooltip:{trigger:'axis',backgroundColor:'#161b22',borderColor:'#30363d',textStyle:{color:'#e6edf3',fontSize:12},
+      formatter:p=>`${p[0].axisValue}<br/>K <b>${p[0]?.value?.toFixed(1)||'—'}</b>　D <b>${p[1]?.value?.toFixed(1)||'—'}</b>`},
+    dataZoom: dataZoomLinked,
+    legend:{data:['K值','D值'],textStyle:{color:'#8b949e',fontSize:11},top:2,right:16},
+    series:[
+      {name:'K值',type:'line',data:kdKData,symbol:'none',lineStyle:{color:'#f0a070',width:1.5},connectNulls:false},
+      {name:'D值',type:'line',data:kdDData,symbol:'none',lineStyle:{color:'#bc8cff',width:1.5},connectNulls:false},
+      {type:'line',data:[{xAxis:0,yAxis:80},{xAxis:0,yAxis:20}],silent:true},
+    ]
+  }, true);
+
+  // --- MACD ---
+  const macdData = alignSeries(d.dates, indDates, ind?.macd || []);
+  const sigData  = alignSeries(d.dates, indDates, ind?.macd_signal || []);
+  const histData = alignSeries(d.dates, indDates, ind?.macd_histogram || []);
+  macdChart.setOption({ ...DARK_OPTS, animation:false,
+    grid:{left:60,right:16,top:4,bottom:48},
+    xAxis:{type:'category',data:d.dates,axisLine:{lineStyle:{color:'#30363d'}},
+      axisLabel:{color:'#8b949e',fontSize:11,formatter:v=>v.slice(5)},splitLine:{show:false}},
+    yAxis:{scale:true,axisLabel:{color:'#8b949e',fontSize:10},axisLine:{lineStyle:{color:'#30363d'}},splitLine:{lineStyle:{color:'#21262d'}}},
+    tooltip:{trigger:'axis',backgroundColor:'#161b22',borderColor:'#30363d',textStyle:{color:'#e6edf3',fontSize:12},
+      formatter:p=>`${p[0].axisValue}<br/>MACD <b>${p.find(x=>x.seriesName==='MACD')?.value?.toFixed(2)||'—'}</b>　Signal <b>${p.find(x=>x.seriesName==='Signal')?.value?.toFixed(2)||'—'}</b>`},
+    dataZoom: dataZoomShared,
+    legend:{data:['MACD','Signal','Histogram'],textStyle:{color:'#8b949e',fontSize:11},top:2,right:16},
+    series:[
+      {name:'Histogram',type:'bar',data:histData,itemStyle:{color:p=>p.value>=0?'rgba(63,185,80,.6)':'rgba(248,81,73,.6)'}},
+      {name:'MACD',type:'line',data:macdData,symbol:'none',lineStyle:{color:'#58a6ff',width:1.5},connectNulls:false},
+      {name:'Signal',type:'line',data:sigData,symbol:'none',lineStyle:{color:'#f0a070',width:1.5},connectNulls:false},
+    ]
+  }, true);
+}
+
+function alignSeries(targetDates, srcDates, srcVals) {
+  const map = {};
+  srcDates.forEach((d,i)=>{ map[d]=srcVals[i]; });
+  return targetDates.map(d=>map[d]!=null?map[d]:null);
+}
+
+function maL(name,data,color) {
+  return { name, type:'line', data, smooth:false, symbol:'none',
+    lineStyle:{color,width:1.5}, connectNulls:false };
+}
+
+/* ══════════════════════════════
+   Latest / Indicator Cards
+══════════════════════════════ */
+async function loadLatest() {
+  try {
+    const r = await fetch(`/api/stocks/${currentStockId}/latest`);
+    const j = await r.json();
+    if (!j.success) return;
+    const d = j.data;
+
+    document.getElementById('ohlcRow').textContent =
+      `開 ${fmt(d.open_price)}　高 ${fmt(d.high_price)}　低 ${fmt(d.low_price)}`;
+
+    const rsi = parseFloat(d.rsi);
+    const kdK = parseFloat(d.kd_k), kdD = parseFloat(d.kd_d);
+    const macd = parseFloat(d.macd), hist = parseFloat(d.macd_histogram);
+    const adx  = parseFloat(d.adx);
+    const bUp  = parseFloat(d.bollinger_upper), bMid = parseFloat(d.bollinger_middle), bLow = parseFloat(d.bollinger_lower);
+    const bPos = bUp && bLow ? ((parseFloat(d.close_price)-bLow)/(bUp-bLow)*100) : null;
+    const wr   = parseFloat(d.williams_r);
+    const atr  = parseFloat(d.atr);
+
+    const cards = [
+      { label:'RSI (14)', value:fmt(rsi,1), sub:rsi>=70?'超買區':rsi<=30?'超賣區':'中性',
+        bar:rsi, barColor:rsi>=70?'var(--red)':rsi<=30?'var(--green)':'var(--yellow)',
+        valClass:rsi>=70?'up':rsi<=30?'down':'' },
+      { label:'KD', value:`K ${fmt(kdK,1)}`, sub:`D ${fmt(kdD,1)}`,
+        bar:kdK, barColor:kdK>kdD?'var(--green)':'var(--red)', valClass:kdK>kdD?'down':'up' },
+      { label:'MACD', value:fmt(macd,2), sub:`Histogram ${fmt(hist,2)}`,
+        valClass:macd>0?'down':macd<0?'up':'' },
+      { label:'布林通道位置', value:bPos!=null?fmt(bPos,1)+'%':'—',
+        sub:`上 ${fmt(bUp)} / 中 ${fmt(bMid)} / 下 ${fmt(bLow)}`,
+        bar:bPos, barColor:bPos>80?'var(--red)':bPos<20?'var(--green)':'var(--blue)' },
+      { label:'ADX 趨勢強度', value:fmt(adx,1),
+        sub:`+DI ${fmt(d.plus_di,1)}　-DI ${fmt(d.minus_di,1)}`,
+        bar:adx, barMax:60, barColor:adx>=25?'var(--blue)':'var(--muted)',
+        valClass:adx>=25?'':'flat' },
+      { label:'Williams %R', value:fmt(wr,1),
+        sub:wr>=-20?'超買':wr<=-80?'超賣':'中性',
+        bar:(wr+100), barColor:wr>=-20?'var(--red)':wr<=-80?'var(--green)':'var(--yellow)',
+        valClass:wr>=-20?'up':wr<=-80?'down':'' },
+      { label:'ATR 波動度', value:fmt(atr,2), sub:'平均真實波動' },
+      { label:'VWAP', value:fmt(d.vwap), sub:'量加權均價',
+        valClass:parseFloat(d.close_price)>parseFloat(d.vwap)?'down':'up' },
+    ];
+
+    document.getElementById('indicatorCards').innerHTML = cards.map(c=>`
+      <div class="icard">
+        <div class="icard-label">${c.label}</div>
+        <div class="icard-value ${c.valClass||''}">${c.value}</div>
+        <div class="icard-sub">${c.sub||''}</div>
+        ${c.bar!=null?`<div class="icard-bar"><div class="icard-bar-fill" style="width:${Math.min(c.bar/(c.barMax||100)*100,100).toFixed(1)}%;background:${c.barColor}"></div></div>`:''}
+      </div>`).join('');
+  } catch(e) {}
+}
+
+/* ══════════════════════════════
+   Score
+══════════════════════════════ */
+async function loadScore() {
+  try {
+    const r = await fetch(`/api/stocks/${currentStockId}/score`);
+    const j = await r.json();
+    if (!j.success) return;
+    const sg = document.getElementById('scoreGroup');
+    const badges = [
+      { val:j.total_score,       lbl:'綜合評分' },
+      { val:j.technical_score,   lbl:'技術面' },
+      { val:j.fundamental_score, lbl:'基本面' },
+    ];
+    sg.innerHTML = badges.map(b=>`
+      <div class="score-badge">
+        <div class="score-val" style="color:${scoreColor(b.val)}">${b.val??'—'}</div>
+        <div class="score-lbl">${b.lbl}</div>
+      </div>`).join('');
+  } catch(e) {}
+}
+
+/* ══════════════════════════════
+   Signals
+══════════════════════════════ */
+async function loadSignals() {
+  try {
+    const r = await fetch(`/api/stocks/${currentStockId}/signals`);
+    const j = await r.json();
+    const wrap = document.getElementById('signalsWrap');
+    if (!j.success || !j.signals || j.signals.length===0) {
+      wrap.innerHTML = '<span class="no-signal">目前無明顯交易訊號</span>'; return;
+    }
+    wrap.innerHTML = j.signals.map(s=>{
+      const cls = s.type?.includes('golden')||s.type?.includes('oversold')||s.type?.includes('bull') ? 'bull'
+                : s.type?.includes('dead')||s.type?.includes('overbought') ? 'bear' : 'neutral';
+      return `<span class="signal-tag ${cls}">${s.label||s.type}</span>`;
+    }).join('');
+  } catch(e) {}
+}
+
+/* ══════════════════════════════
+   Institutional
+══════════════════════════════ */
+async function loadInstitutional() {
+  try {
+    const [trendRes, dailyRes] = await Promise.all([
+      fetch(`/api/stocks/${currentStockId}/institutional?days=20`),
+      fetch(`/api/stocks/${currentStockId}/institutional/daily?days=30`)
+    ]);
+    const trend = await trendRes.json();
+    const daily = await dailyRes.json();
+
+    const t = trend.data?.trend || trend.trend;
+    const cardsEl = document.getElementById('instCards');
+
+    if (!t) { cardsEl.innerHTML='<div class="placeholder">無法人資料</div>'; return; }
+
+    const instItems = [
+      { label:'外資', net:t.foreign?.net_total, trend:t.foreign?.trend, buy:t.foreign?.buy_days, sell:t.foreign?.sell_days },
+      { label:'投信', net:t.trust?.net_total,   trend:t.trust?.trend,   buy:t.trust?.buy_days,   sell:t.trust?.sell_days },
+      { label:'自營商',net:t.dealer?.net_total, trend:t.dealer?.trend,  buy:t.dealer?.buy_days,  sell:t.dealer?.sell_days },
+      { label:'合計',  net:t.total_net,         trend:t.overall_trend },
+    ];
+
+    cardsEl.innerHTML = instItems.map(it=>{
+      const isPos = it.net >= 0;
+      return `<div class="inst-card">
+        <div class="inst-card-title">${it.label}（近20日）</div>
+        <div class="inst-card-net ${isPos?'down':'up'}">${fmtB(it.net)}</div>
+        <div class="inst-card-detail">${it.trend||''}${it.buy!=null?`　買 ${it.buy}日 / 賣 ${it.sell}日`:''}</div>
+      </div>`;
+    }).join('');
+
+    // Daily chart
+    if (daily.success && daily.data?.dates?.length) {
+      const dd = daily.data;
+      instChart.setOption({ ...DARK_OPTS, animation:false,
+        grid:{left:60,right:16,top:10,bottom:40},
+        xAxis:{type:'category',data:dd.dates,axisLabel:{color:'#8b949e',fontSize:10,formatter:v=>v.slice(5)},
+          axisLine:{lineStyle:{color:'#30363d'}},splitLine:{show:false}},
+        yAxis:{scale:true,axisLabel:{color:'#8b949e',fontSize:10,
+          formatter:v=>Math.abs(v)>=1e4?(v/1e4).toFixed(0)+'萬':v},
+          axisLine:{lineStyle:{color:'#30363d'}},splitLine:{lineStyle:{color:'#21262d'}}},
+        tooltip:{trigger:'axis',backgroundColor:'#161b22',borderColor:'#30363d',textStyle:{color:'#e6edf3',fontSize:12},
+          formatter:params=>{
+            let html=`<div style="color:#8b949e;margin-bottom:4px">${params[0].axisValue}</div>`;
+            params.forEach(p=>{ html+=`<div>${p.marker}${p.seriesName} <b style="color:${p.value>=0?'#3fb950':'#f85149'}">${fmtB(p.value)}</b></div>`; });
+            return html;
+          }},
+        legend:{data:['外資','投信','自營商'],textStyle:{color:'#8b949e',fontSize:11},top:4,right:16},
+        series:[
+          {name:'外資',type:'bar',data:dd.foreign_net,stack:'inst',itemStyle:{color:p=>dd.foreign_net[p.dataIndex]>=0?'rgba(63,185,80,.7)':'rgba(248,81,73,.7)'}},
+          {name:'投信',type:'bar',data:dd.trust_net,  stack:'inst',itemStyle:{color:p=>dd.trust_net[p.dataIndex]>=0?'rgba(63,185,80,.5)':'rgba(248,81,73,.5)'}},
+          {name:'自營商',type:'bar',data:dd.dealer_net,stack:'inst',itemStyle:{color:p=>dd.dealer_net[p.dataIndex]>=0?'rgba(63,185,80,.3)':'rgba(248,81,73,.3)'}},
+        ]
+      }, true);
+    } else {
+      instChart.setOption({...DARK_OPTS,graphic:[{type:'text',left:'center',top:'middle',style:{text:'無法人歷史資料',fill:'#8b949e',fontSize:14}}]},true);
+    }
+  } catch(e) { document.getElementById('instCards').innerHTML='<div class="placeholder">載入失敗</div>'; }
+}
+
+/* ══════════════════════════════
+   Revenue
+══════════════════════════════ */
+async function loadRevenue() {
+  try {
+    const r = await fetch(`/api/stocks/${currentStockId}/revenue`);
+    const j = await r.json();
+    if (!j.success || !j.data) {
+      revChart.setOption({...DARK_OPTS,graphic:[{type:'text',left:'center',top:'middle',style:{text:'無月營收資料',fill:'#8b949e',fontSize:14}}]},true);
+      return;
+    }
+    const d = j.data;
+    const summary = document.getElementById('revSummary');
+    summary.innerHTML = `
+      <div class="rev-item">最新月份 <span>${d.latest_month||'—'}</span></div>
+      <div class="rev-item">月營收 <b>${fmtM(d.latest_revenue)}</b></div>
+      <div class="rev-item">月增率 <b class="${parseFloat(d.latest_mom)>=0?'down':'up'}">${d.latest_mom!=null?(parseFloat(d.latest_mom)>=0?'+':'')+parseFloat(d.latest_mom).toFixed(1)+'%':'—'}</b></div>
+      <div class="rev-item">年增率 <b class="${parseFloat(d.latest_yoy)>=0?'down':'up'}">${d.latest_yoy!=null?(parseFloat(d.latest_yoy)>=0?'+':'')+parseFloat(d.latest_yoy).toFixed(1)+'%':'—'}</b></div>
+    `;
+
+    const hist = d.history || [];
+    if (hist.length === 0) {
+      revChart.setOption({...DARK_OPTS,graphic:[{type:'text',left:'center',top:'middle',style:{text:'無歷史營收資料',fill:'#8b949e',fontSize:14}}]},true);
+      return;
+    }
+
+    const labels = hist.map(h=>`${h.year}/${String(h.month).padStart(2,'0')}`);
+    const revVals = hist.map(h=>parseFloat(h.revenue)||0);
+    const yoyVals = hist.map(h=>h.revenue_yoy!=null?parseFloat(h.revenue_yoy):null);
+
+    revChart.setOption({ ...DARK_OPTS, animation:false,
+      grid:{left:70,right:60,top:20,bottom:40},
+      xAxis:{type:'category',data:labels,axisLabel:{color:'#8b949e',fontSize:10,rotate:30},axisLine:{lineStyle:{color:'#30363d'}},splitLine:{show:false}},
+      yAxis:[
+        {axisLabel:{color:'#8b949e',fontSize:10,formatter:v=>v>=1e8?(v/1e8).toFixed(1)+'億':v>=1e4?(v/1e4).toFixed(0)+'萬':v},
+          axisLine:{lineStyle:{color:'#30363d'}},splitLine:{lineStyle:{color:'#21262d'}}},
+        {axisLabel:{color:'#8b949e',fontSize:10,formatter:v=>v+'%'},axisLine:{lineStyle:{color:'#30363d'}},splitLine:{show:false}},
+      ],
+      tooltip:{trigger:'axis',backgroundColor:'#161b22',borderColor:'#30363d',textStyle:{color:'#e6edf3',fontSize:12},
+        formatter:params=>{
+          let html=`<div style="color:#8b949e;margin-bottom:4px">${params[0].axisValue}</div>`;
+          params.forEach(p=>{
+            if(p.seriesName==='月營收') html+=`<div>${p.marker}月營收 <b>${fmtM(p.value)}</b></div>`;
+            else if(p.value!=null) html+=`<div>${p.marker}年增率 <b style="color:${p.value>=0?'#3fb950':'#f85149'}">${(p.value>=0?'+':'')+p.value.toFixed(1)}%</b></div>`;
+          }); return html;
+        }},
+      legend:{data:['月營收','年增率(%)'],textStyle:{color:'#8b949e',fontSize:11},top:0,right:8},
+      series:[
+        {name:'月營收',type:'bar',data:revVals,yAxisIndex:0,itemStyle:{color:'rgba(88,166,255,.7)'},barMaxWidth:32},
+        {name:'年增率(%)',type:'line',data:yoyVals,yAxisIndex:1,symbol:'circle',symbolSize:5,
+          lineStyle:{color:'#e3b341',width:2},itemStyle:{color:p=>p.value>=0?'#3fb950':'#f85149'},connectNulls:false},
+      ]
+    }, true);
+  } catch(e) { document.getElementById('revSummary').textContent='載入失敗'; }
+}
+
+/* ══════════════════════════════
+   Financial
+══════════════════════════════ */
+async function loadFinancial() {
+  const wrap = document.getElementById('finTableWrap');
+  try {
+    const r = await fetch(`/api/stocks/${currentStockId}/financial`);
+    const j = await r.json();
+    const stmts = j.data?.financial_statements || [];
+    if (stmts.length === 0) { wrap.innerHTML='<div class="placeholder">無財報資料（需先同步財報）</div>'; return; }
+
+    const pct = (a,b) => a&&b&&b!==0 ? (a/b*100).toFixed(1)+'%' : '—';
+    const rows = stmts.slice(-4).reverse().map(s=>{
+      const grossM  = pct(s.gross_profit,  s.revenue);
+      const opM     = pct(s.operating_income, s.revenue);
+      const netM    = pct(s.net_income,     s.revenue);
+      const gVal = parseFloat(grossM);
+      const oVal = parseFloat(opM);
+      const nVal = parseFloat(netM);
+      return `<tr>
+        <td>${s.year} Q${s.quarter}</td>
+        <td>${fmtM(s.revenue)}</td>
+        <td class="${gVal>=30?'good':gVal<15?'bad':''}">${grossM}</td>
+        <td class="${oVal>=15?'good':oVal<5?'bad':''}">${opM}</td>
+        <td class="${nVal>=10?'good':nVal<0?'bad':''}">${netM}</td>
+        <td class="${parseFloat(s.eps)>0?'good':'bad'}">${s.eps!=null?fmt(s.eps):'—'}</td>
+        <td>${fmtM(s.operating_cash_flow)}</td>
+      </tr>`;
+    }).join('');
+
+    wrap.innerHTML = `
+      <table class="fin-table">
+        <thead><tr>
+          <th>季度</th><th>營收</th><th>毛利率</th><th>營益率</th><th>淨利率</th><th>EPS</th><th>營業現金流</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>`;
+  } catch(e) { wrap.innerHTML='<div class="placeholder">載入失敗</div>'; }
+}
+
+/* ══════════════════════════════
+   Valuation
+══════════════════════════════ */
+async function loadValuation() {
+  try {
+    const r = await fetch(`/api/stocks/${currentStockId}/valuation`);
+    const j = await r.json();
+    const d = j.data || {};
+    const cards = [
+      { label:'本益比 (PE)', val:d.pe_ratio!=null?fmt(d.pe_ratio,1):'—', sub:'TTM EPS: '+fmt(d.eps_ttm,2) },
+      { label:'股價淨值比 (PB)', val:d.pb_ratio!=null?fmt(d.pb_ratio,2):'—', sub:'每股淨值: '+fmt(d.book_value,2) },
+      { label:'殖利率', val:d.dividend_yield!=null?fmt(d.dividend_yield,2)+'%':'—', sub:'現金股利配發' },
+      { label:'EPS (TTM)', val:d.eps_ttm!=null?fmt(d.eps_ttm,2):'—', sub:'近四季合計' },
+    ];
+    document.getElementById('valCards').innerHTML = cards.map(c=>`
+      <div class="val-card">
+        <div class="val-card-label">${c.label}</div>
+        <div class="val-card-value">${c.val}</div>
+        <div class="val-card-sub">${c.sub}</div>
+      </div>`).join('');
+  } catch(e) {}
+}
+
+/* ══════════════════════════════
+   Sync
+══════════════════════════════ */
+async function syncAll() {
+  const btn = document.getElementById('syncBtn');
+  const st  = document.getElementById('syncStatus');
+  btn.disabled=true; btn.textContent='↻ 更新中...';
+  st.style.display='block'; st.style.color='var(--muted)';
+  st.textContent='正在更新股價並重算技術指標...';
+  try {
+    const res = await fetch('/api/admin/sync', { method:'POST' });
+    const d   = await res.json();
+    if (d.success) { st.style.color='var(--green)'; st.textContent='✓ '+d.message; loadAll(); }
+    else           { st.style.color='var(--red)';   st.textContent='✗ '+d.error; }
+  } catch(e) { st.style.color='var(--red)'; st.textContent='✗ '+e.message; }
+  finally { btn.disabled=false; btn.textContent='↻ 更新'; setTimeout(()=>st.style.display='none',8000); }
+}
+
+function showMsg(m) { const el=document.getElementById('mainMsg'); el.textContent=m; el.style.display='block'; }
+function hideMsg()  { document.getElementById('mainMsg').style.display='none'; }
+
+/* ══════════════════════════════
+   Init
+══════════════════════════════ */
+loadAll();
+</script>
+</body>
+</html>

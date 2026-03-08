@@ -260,6 +260,157 @@ app.get('/api/stocks/:stockId/valuation', async (req, res) => {
 });
 
 // ============================================
+// 技術指標歷史 & 法人日線 API
+// ============================================
+
+app.get('/api/stocks/:stockId/indicators', async (req, res) => {
+  try {
+    const { stockId } = req.params;
+    const days = Math.min(parseInt(req.query.days) || 120, 500);
+    const [rows] = await pool.query(
+      `SELECT trade_date, rsi, macd, macd_signal, macd_histogram, kd_k, kd_d, obv
+       FROM technical_indicators
+       WHERE stock_id = ?
+       ORDER BY trade_date DESC LIMIT ?`,
+      [stockId, days]
+    );
+    if (rows.length === 0) return res.json({ success: true, data: [] });
+    const data = rows.reverse();
+    res.json({
+      success: true,
+      data: {
+        dates:          data.map(r => r.trade_date.toISOString().split('T')[0]),
+        rsi:            data.map(r => r.rsi            != null ? parseFloat(r.rsi)            : null),
+        macd:           data.map(r => r.macd           != null ? parseFloat(r.macd)           : null),
+        macd_signal:    data.map(r => r.macd_signal    != null ? parseFloat(r.macd_signal)    : null),
+        macd_histogram: data.map(r => r.macd_histogram != null ? parseFloat(r.macd_histogram) : null),
+        kd_k:           data.map(r => r.kd_k           != null ? parseFloat(r.kd_k)           : null),
+        kd_d:           data.map(r => r.kd_d           != null ? parseFloat(r.kd_d)           : null),
+      }
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+app.get('/api/stocks/:stockId/institutional/daily', async (req, res) => {
+  try {
+    const { stockId } = req.params;
+    const days = Math.min(parseInt(req.query.days) || 30, 90);
+    const [rows] = await pool.query(
+      `SELECT trade_date, foreign_net, trust_net, dealer_net, total_net
+       FROM institutional_trading
+       WHERE stock_id = ?
+       ORDER BY trade_date DESC LIMIT ?`,
+      [stockId, days]
+    );
+    if (rows.length === 0) return res.json({ success: true, data: [] });
+    const data = rows.reverse();
+    res.json({
+      success: true,
+      data: {
+        dates:       data.map(r => r.trade_date.toISOString().split('T')[0]),
+        foreign_net: data.map(r => r.foreign_net),
+        trust_net:   data.map(r => r.trust_net),
+        dealer_net:  data.map(r => r.dealer_net),
+        total_net:   data.map(r => r.total_net),
+      }
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// ============================================
+// K 線圖資料 API
+// ============================================
+
+app.get('/api/stocks/:stockId/kline', async (req, res) => {
+  try {
+    const { stockId } = req.params;
+    const days = Math.min(parseInt(req.query.days) || 120, 500);
+
+    // 多抓 60 筆讓 MA60 能有足夠的暖機資料
+    const [rows] = await pool.query(
+      `SELECT trade_date, open_price, high_price, low_price, close_price, volume, change_percent
+       FROM daily_prices
+       WHERE stock_id = ?
+       ORDER BY trade_date DESC
+       LIMIT ?`,
+      [stockId, days + 60]
+    );
+
+    if (rows.length === 0) {
+      return res.status(404).json({ success: false, error: '無資料' });
+    }
+
+    const all = rows.reverse();
+    const closes = all.map(r => parseFloat(r.close_price));
+
+    // 在 server 端直接算 MA 序列，不依賴 technical_indicators
+    const calcMA = (arr, n) => arr.map((_, i) =>
+      i < n - 1 ? null : +( arr.slice(i - n + 1, i + 1).reduce((a, b) => a + b, 0) / n ).toFixed(2)
+    );
+
+    const ma5  = calcMA(closes, 5);
+    const ma10 = calcMA(closes, 10);
+    const ma20 = calcMA(closes, 20);
+    const ma60 = calcMA(closes, 60);
+
+    // 只回傳使用者要求的天數，但 MA 已有完整暖機
+    const offset = all.length - days;
+    const data   = all.slice(offset);
+
+    // 偵測歷史 MA 交叉訊號（在顯示範圍內）
+    const signals = [];
+    for (let i = 1; i < all.length; i++) {
+      if (i < offset) continue; // 只回傳顯示範圍內的訊號
+      if (ma5[i] == null || ma20[i] == null || ma5[i-1] == null || ma20[i-1] == null) continue;
+      const dateStr = all[i].trade_date.toISOString().split('T')[0];
+      if (ma5[i-1] <= ma20[i-1] && ma5[i] > ma20[i])
+        signals.push({ date: dateStr, type: 'golden_cross', label: '金叉' });
+      else if (ma5[i-1] >= ma20[i-1] && ma5[i] < ma20[i])
+        signals.push({ date: dateStr, type: 'death_cross', label: '死叉' });
+    }
+
+    res.json({
+      success: true,
+      data: {
+        dates:          data.map(r => r.trade_date.toISOString().split('T')[0]),
+        ohlcv:          data.map(r => [r.open_price, r.close_price, r.low_price, r.high_price].map(parseFloat)),
+        volume:         data.map(r => parseFloat(r.volume)),
+        change_percent: data.map(r => r.change_percent),
+        ma5:  ma5.slice(offset),
+        ma10: ma10.slice(offset),
+        ma20: ma20.slice(offset),
+        ma60: ma60.slice(offset),
+        signals,
+      }
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// ============================================
+// 管理用：一鍵更新股價 + 重算指標
+// ============================================
+
+app.post('/api/admin/sync', async (req, res) => {
+  try {
+    const { fetchAllStocksLatestPrices } = require('../crawler/fetchDailyPrices');
+    const { calculateAllIndicators } = require('../analysis/calculateIndicators');
+
+    const priceResult = await fetchAllStocksLatestPrices();
+    await calculateAllIndicators();
+
+    res.json({ success: true, message: `已更新 ${priceResult.count} 檔股票股價（${priceResult.tradeDate}），技術指標重算完成` });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// ============================================
 // 健康檢查
 // ============================================
 
@@ -353,6 +504,7 @@ app.get('/', (req, res) => {
 
         <div class="card">
           <h2>Quick Links</h2>
+          <a href="/chart.html" class="button">📈 K 線圖</a>
           <a href="/api/stocks/2330/latest" class="button">台積電最新</a>
           <a href="/api/stocks/2330/signals" class="button">台積電訊號</a>
           <a href="/api/stocks/2330/score" class="button">台積電評分</a>

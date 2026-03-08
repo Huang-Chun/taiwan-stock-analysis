@@ -2,8 +2,8 @@ const { McpServer } = require('@modelcontextprotocol/sdk/server/mcp.js');
 const { StdioServerTransport } = require('@modelcontextprotocol/sdk/server/stdio.js');
 const { z } = require('zod');
 const { pool } = require('../database/connection');
-const { fetchStockList } = require('../crawler/fetchStockList');
-const { fetchRecentPrices, fetchBatchDailyPrices, fetchMultiMonthPrices } = require('../crawler/fetchDailyPrices');
+const { fetchAllStockLists } = require('../crawler/fetchStockList');
+const { fetchRecentPrices, fetchBatchDailyPrices, fetchMultiMonthPrices, fetchAllStocksLatestPrices, syncAllStocksHistory } = require('../crawler/fetchDailyPrices');
 const { calculateIndicatorsForStock, calculateAllIndicators } = require('../analysis/calculateIndicators');
 const { fetchAndSaveInstitutionalTrading, fetchRecentInstitutionalTrading, fetchAndSaveInstitutionalTradingForStock } = require('../crawler/fetchInstitutionalTrading');
 const { fetchAndSaveMarginTrading, fetchRecentMarginTrading } = require('../crawler/fetchMarginTrading');
@@ -396,12 +396,12 @@ server.tool(
 
 server.tool(
   'sync_stock_list',
-  '從台灣證交所 (TWSE) 同步最新的上市股票清單到資料庫',
+  '從台灣證交所 (TWSE) 同步最新的上市＋上櫃股票清單到資料庫',
   {},
   async () => {
     try {
-      const stocks = await fetchStockList();
-      return { content: [{ type: 'text', text: `成功同步 ${stocks.length} 檔股票清單` }] };
+      const stocks = await fetchAllStockLists();
+      return { content: [{ type: 'text', text: `成功同步 ${stocks.length} 檔股票清單（上市＋上櫃）` }] };
     } catch (error) {
       return { content: [{ type: 'text', text: `同步失敗: ${error.message}` }], isError: true };
     }
@@ -412,7 +412,7 @@ server.tool(
   'sync_daily_prices',
   '從 TWSE 抓取最新每日股價資料並存入資料庫',
   {
-    stock_id: z.string().optional().describe('指定股票代號,不填則抓取前 10 檔股票'),
+    stock_id: z.string().optional().describe('指定股票代號,不填則抓取全市場最新股價'),
     months: z.number().min(1).max(12).optional().describe('往回抓幾個月,預設 1,最大 12'),
   },
   async ({ stock_id, months }) => {
@@ -430,11 +430,33 @@ server.tool(
           return { content: [{ type: 'text', text: `成功抓取股票 ${stock_id} 的股價資料` }] };
         }
       } else {
-        await fetchRecentPrices();
-        return { content: [{ type: 'text', text: '成功抓取最近股價資料（前 10 檔）' }] };
+        const result = await fetchAllStocksLatestPrices();
+        return { content: [{ type: 'text', text: `成功抓取全市場 ${result.count} 檔股票最新股價（交易日: ${result.tradeDate}）` }] };
       }
     } catch (error) {
       return { content: [{ type: 'text', text: `抓取失敗: ${error.message}` }], isError: true };
+    }
+  }
+);
+
+server.tool(
+  'sync_history',
+  '智慧補抓全市場歷史股價：當月永遠更新，舊月份只補缺漏，不重複抓取已有資料',
+  {
+    months: z.number().min(1).max(12).optional().describe('往回幾個月，預設 6'),
+  },
+  async ({ months = 6 }) => {
+    try {
+      let lastLog = '';
+      const result = await syncAllStocksHistory(months, (done, total, stockId) => {
+        if (done % 50 === 0 || done === total) {
+          lastLog = `進度 ${done}/${total}（最後: ${stockId}）`;
+          console.error(lastLog);
+        }
+      });
+      return { content: [{ type: 'text', text: `補抓完成！共處理 ${result.stocks} 檔股票，寫入 ${result.records} 筆資料` }] };
+    } catch (error) {
+      return { content: [{ type: 'text', text: `補抓失敗: ${error.message}` }], isError: true };
     }
   }
 );
