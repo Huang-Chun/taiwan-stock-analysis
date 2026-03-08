@@ -263,29 +263,119 @@ app.get('/api/stocks/:stockId/valuation', async (req, res) => {
 // 技術指標歷史 & 法人日線 API
 // ============================================
 
+// 從價格陣列計算完整 RSI 序列
+function calcRSISeries(closes, period = 14) {
+  const result = new Array(closes.length).fill(null);
+  if (closes.length < period + 1) return result;
+  let avgGain = 0, avgLoss = 0;
+  for (let i = 1; i <= period; i++) {
+    const ch = closes[i] - closes[i - 1];
+    if (ch > 0) avgGain += ch; else avgLoss += Math.abs(ch);
+  }
+  avgGain /= period; avgLoss /= period;
+  result[period] = avgLoss === 0 ? 100 : parseFloat((100 - 100 / (1 + avgGain / avgLoss)).toFixed(2));
+  for (let i = period + 1; i < closes.length; i++) {
+    const ch = closes[i] - closes[i - 1];
+    avgGain = (avgGain * (period - 1) + (ch > 0 ? ch : 0)) / period;
+    avgLoss = (avgLoss * (period - 1) + (ch < 0 ? Math.abs(ch) : 0)) / period;
+    result[i] = avgLoss === 0 ? 100 : parseFloat((100 - 100 / (1 + avgGain / avgLoss)).toFixed(2));
+  }
+  return result;
+}
+
+// EMA 序列
+function calcEMASeries(arr, period) {
+  if (arr.length < period) return new Array(arr.length).fill(null);
+  const k = 2 / (period + 1);
+  let ema = arr.slice(0, period).reduce((a, b) => a + b, 0) / period;
+  const result = [...new Array(period - 1).fill(null), ema];
+  for (let i = period; i < arr.length; i++) {
+    ema = arr[i] * k + ema * (1 - k);
+    result.push(ema);
+  }
+  return result;
+}
+
+// MACD 序列
+function calcMACDSeries(closes) {
+  const n = closes.length;
+  const ema12 = calcEMASeries(closes, 12);
+  const ema26 = calcEMASeries(closes, 26);
+  const macdLine = closes.map((_, i) =>
+    ema12[i] != null && ema26[i] != null ? ema12[i] - ema26[i] : null);
+  // signal = 9-period EMA of non-null MACD values, re-aligned
+  const nonNull = macdLine.filter(v => v != null);
+  const signalRaw = calcEMASeries(nonNull, 9);
+  let si = 0;
+  const signal = new Array(n).fill(null);
+  const hist   = new Array(n).fill(null);
+  macdLine.forEach((v, i) => {
+    if (v != null) {
+      signal[i] = signalRaw[si] != null ? parseFloat(signalRaw[si].toFixed(4)) : null;
+      hist[i]   = signal[i]     != null ? parseFloat((v - signal[i]).toFixed(4)) : null;
+      si++;
+    }
+  });
+  return {
+    macd:      macdLine.map(v => v != null ? parseFloat(v.toFixed(4)) : null),
+    signal,
+    histogram: hist
+  };
+}
+
+// KD 序列
+function calcKDSeries(highs, lows, closes, period = 9) {
+  const kArr = new Array(closes.length).fill(null);
+  const dArr = new Array(closes.length).fill(null);
+  let k = 50, d = 50;
+  for (let i = period - 1; i < closes.length; i++) {
+    const hi = Math.max(...highs.slice(i - period + 1, i + 1));
+    const lo = Math.min(...lows.slice(i - period + 1, i + 1));
+    const rsv = hi !== lo ? ((closes[i] - lo) / (hi - lo)) * 100 : 50;
+    k = 2 / 3 * k + 1 / 3 * rsv;
+    d = 2 / 3 * d + 1 / 3 * k;
+    kArr[i] = parseFloat(k.toFixed(2));
+    dArr[i] = parseFloat(d.toFixed(2));
+  }
+  return { k: kArr, d: dArr };
+}
+
 app.get('/api/stocks/:stockId/indicators', async (req, res) => {
   try {
     const { stockId } = req.params;
     const days = Math.min(parseInt(req.query.days) || 120, 500);
+    // 多抓 60 筆暖機資料讓 MACD/KD 更準確
     const [rows] = await pool.query(
-      `SELECT trade_date, rsi, macd, macd_signal, macd_histogram, kd_k, kd_d, obv
-       FROM technical_indicators
-       WHERE stock_id = ?
+      `SELECT trade_date, close_price, high_price, low_price
+       FROM daily_prices WHERE stock_id = ?
        ORDER BY trade_date DESC LIMIT ?`,
-      [stockId, days]
+      [stockId, days + 60]
     );
-    if (rows.length === 0) return res.json({ success: true, data: [] });
-    const data = rows.reverse();
+    if (rows.length === 0) return res.json({ success: true, data: { dates:[], rsi:[], macd:[], macd_signal:[], macd_histogram:[], kd_k:[], kd_d:[] } });
+
+    const all    = rows.reverse();
+    const closes = all.map(r => parseFloat(r.close_price));
+    const highs  = all.map(r => parseFloat(r.high_price));
+    const lows   = all.map(r => parseFloat(r.low_price));
+
+    const rsiArr  = calcRSISeries(closes);
+    const macdObj = calcMACDSeries(closes);
+    const kdObj   = calcKDSeries(highs, lows, closes);
+
+    // 只回傳最近 days 筆（去掉暖機資料）
+    const trim = arr => arr.slice(-days);
+    const trimDates = all.slice(-days).map(r => r.trade_date.toISOString().split('T')[0]);
+
     res.json({
       success: true,
       data: {
-        dates:          data.map(r => r.trade_date.toISOString().split('T')[0]),
-        rsi:            data.map(r => r.rsi            != null ? parseFloat(r.rsi)            : null),
-        macd:           data.map(r => r.macd           != null ? parseFloat(r.macd)           : null),
-        macd_signal:    data.map(r => r.macd_signal    != null ? parseFloat(r.macd_signal)    : null),
-        macd_histogram: data.map(r => r.macd_histogram != null ? parseFloat(r.macd_histogram) : null),
-        kd_k:           data.map(r => r.kd_k           != null ? parseFloat(r.kd_k)           : null),
-        kd_d:           data.map(r => r.kd_d           != null ? parseFloat(r.kd_d)           : null),
+        dates:          trimDates,
+        rsi:            trim(rsiArr),
+        macd:           trim(macdObj.macd),
+        macd_signal:    trim(macdObj.signal),
+        macd_histogram: trim(macdObj.histogram),
+        kd_k:           trim(kdObj.k),
+        kd_d:           trim(kdObj.d),
       }
     });
   } catch (error) {
