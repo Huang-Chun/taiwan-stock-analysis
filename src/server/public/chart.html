@@ -574,19 +574,31 @@ function renderCharts(kline, ind) {
   const macdData = alignSeries(d.dates, indDates, ind?.macd || []);
   const sigData  = alignSeries(d.dates, indDates, ind?.macd_signal || []);
   const histData = alignSeries(d.dates, indDates, ind?.macd_histogram || []);
+
+  // Histogram 獨立 Y 軸，讓柱子佔滿垂直空間
+  const histNonNull = histData.filter(v => v != null);
+  const histMax = histNonNull.length ? Math.max(...histNonNull.map(Math.abs)) * 1.1 : 1;
+
   macdChart.setOption({ ...DARK_OPTS, animation:false,
     grid:{left:60,right:16,top:4,bottom:48},
     xAxis:{type:'category',data:d.dates,axisLine:{lineStyle:{color:'#30363d'}},
       axisLabel:{color:'#8b949e',fontSize:11,formatter:v=>v.slice(5)},splitLine:{show:false}},
-    yAxis:{scale:true,axisLabel:{color:'#8b949e',fontSize:10},axisLine:{lineStyle:{color:'#30363d'}},splitLine:{lineStyle:{color:'#21262d'}}},
+    yAxis:[
+      // Y0：Histogram 專用（不顯示刻度，讓柱子填滿空間）
+      { min:-histMax, max:histMax, show:false },
+      // Y1：MACD / Signal 線
+      { scale:true, axisLabel:{color:'#8b949e',fontSize:10}, axisLine:{lineStyle:{color:'#30363d'}}, splitLine:{lineStyle:{color:'#21262d'}} }
+    ],
     tooltip:{trigger:'axis',backgroundColor:'#161b22',borderColor:'#30363d',textStyle:{color:'#e6edf3',fontSize:12},
-      formatter:p=>`${p[0].axisValue}<br/>MACD <b>${p.find(x=>x.seriesName==='MACD')?.value?.toFixed(2)||'—'}</b>　Signal <b>${p.find(x=>x.seriesName==='Signal')?.value?.toFixed(2)||'—'}</b>`},
+      formatter:p=>`${p[0].axisValue}<br/>MACD <b>${p.find(x=>x.seriesName==='MACD')?.value?.toFixed(2)||'—'}</b>　Signal <b>${p.find(x=>x.seriesName==='Signal')?.value?.toFixed(2)||'—'}</b>　Hist <b style="color:${(p.find(x=>x.seriesName==='Histogram')?.value??0)>=0?'#3fb950':'#f85149'}">${p.find(x=>x.seriesName==='Histogram')?.value?.toFixed(2)||'—'}</b>`},
     dataZoom: dataZoomShared,
     legend:{data:['MACD','Signal','Histogram'],textStyle:{color:'#8b949e',fontSize:11},top:2,right:16},
     series:[
-      {name:'Histogram',type:'bar',data:histData,itemStyle:{color:p=>p.value>=0?'rgba(63,185,80,.6)':'rgba(248,81,73,.6)'}},
-      {name:'MACD',type:'line',data:macdData,symbol:'none',lineStyle:{color:'#58a6ff',width:1.5},connectNulls:false},
-      {name:'Signal',type:'line',data:sigData,symbol:'none',lineStyle:{color:'#f0a070',width:1.5},connectNulls:false},
+      { name:'Histogram', type:'bar', data:histData, yAxisIndex:0,
+        itemStyle:{color:p=>p.value>=0?'rgba(63,185,80,.85)':'rgba(248,81,73,.85)'},
+        barMaxWidth:8 },
+      { name:'MACD',   type:'line', data:macdData, yAxisIndex:1, symbol:'none', lineStyle:{color:'#58a6ff',width:1.5}, connectNulls:false },
+      { name:'Signal', type:'line', data:sigData,  yAxisIndex:1, symbol:'none', lineStyle:{color:'#f0a070',width:1.5}, connectNulls:false },
     ]
   }, true);
 }
