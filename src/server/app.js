@@ -10,6 +10,9 @@ const { analyzeRevenueTrend, calculateValuation, getFinancialSummary, scoreFunda
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// dateStrings:true 讓 mysql2 回傳字串，直接取前 10 碼即為 YYYY-MM-DD
+const toDateStr = d => (typeof d === 'string' ? d : d.toISOString()).slice(0, 10);
+
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
@@ -364,7 +367,7 @@ app.get('/api/stocks/:stockId/indicators', async (req, res) => {
 
     // 只回傳最近 days 筆（去掉暖機資料）
     const trim = arr => arr.slice(-days);
-    const trimDates = all.slice(-days).map(r => r.trade_date.toISOString().split('T')[0]);
+    const trimDates = all.slice(-days).map(r => toDateStr(r.trade_date));
 
     res.json({
       success: true,
@@ -399,7 +402,7 @@ app.get('/api/stocks/:stockId/institutional/daily', async (req, res) => {
     res.json({
       success: true,
       data: {
-        dates:       data.map(r => r.trade_date.toISOString().split('T')[0]),
+        dates:       data.map(r => toDateStr(r.trade_date)),
         foreign_net: data.map(r => r.foreign_net),
         trust_net:   data.map(r => r.trust_net),
         dealer_net:  data.map(r => r.dealer_net),
@@ -456,7 +459,7 @@ app.get('/api/stocks/:stockId/kline', async (req, res) => {
     for (let i = 1; i < all.length; i++) {
       if (i < offset) continue; // 只回傳顯示範圍內的訊號
       if (ma5[i] == null || ma20[i] == null || ma5[i-1] == null || ma20[i-1] == null) continue;
-      const dateStr = all[i].trade_date.toISOString().split('T')[0];
+      const dateStr = toDateStr(all[i].trade_date);
       if (ma5[i-1] <= ma20[i-1] && ma5[i] > ma20[i])
         signals.push({ date: dateStr, type: 'golden_cross', label: '金叉' });
       else if (ma5[i-1] >= ma20[i-1] && ma5[i] < ma20[i])
@@ -466,7 +469,7 @@ app.get('/api/stocks/:stockId/kline', async (req, res) => {
     res.json({
       success: true,
       data: {
-        dates:          data.map(r => r.trade_date.toISOString().split('T')[0]),
+        dates:          data.map(r => toDateStr(r.trade_date)),
         ohlcv:          data.map(r => [r.open_price, r.close_price, r.low_price, r.high_price].map(parseFloat)),
         volume:         data.map(r => parseFloat(r.volume)),
         change_percent: data.map(r => r.change_percent),

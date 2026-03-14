@@ -556,7 +556,7 @@ function renderCharts(kline, ind) {
   const kdKData = alignSeries(d.dates, indDates, ind?.kd_k || []);
   const kdDData = alignSeries(d.dates, indDates, ind?.kd_d || []);
   kdChart.setOption({ ...DARK_OPTS, animation:false,
-    grid:{left:60,right:16,top:4,bottom:6},
+    grid:{left:60,right:16,top:22,bottom:6},
     xAxis:{type:'category',data:d.dates,axisLabel:{show:false},axisLine:{lineStyle:{color:'#30363d'}},splitLine:{show:false}},
     yAxis:{min:0,max:100,splitNumber:2,axisLabel:{color:'#8b949e',fontSize:10},axisLine:{lineStyle:{color:'#30363d'}},splitLine:{lineStyle:{color:'#21262d'}}},
     tooltip:{trigger:'axis',backgroundColor:'#161b22',borderColor:'#30363d',textStyle:{color:'#e6edf3',fontSize:12},
@@ -580,7 +580,7 @@ function renderCharts(kline, ind) {
   const histMax = histNonNull.length ? Math.max(...histNonNull.map(Math.abs)) * 1.1 : 1;
 
   macdChart.setOption({ ...DARK_OPTS, animation:false,
-    grid:{left:60,right:16,top:4,bottom:48},
+    grid:{left:60,right:16,top:22,bottom:48},
     xAxis:{type:'category',data:d.dates,axisLine:{lineStyle:{color:'#30363d'}},
       axisLabel:{color:'#8b949e',fontSize:11,formatter:v=>v.slice(5)},splitLine:{show:false}},
     yAxis:[
