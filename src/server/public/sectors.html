@@ -1,0 +1,913 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1.0">
+  <title>產業分類</title>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <style>
+    *, *::before, *::after { margin:0; padding:0; box-sizing:border-box; }
+    :root {
+      --bg:#0d1117; --bg2:#161b22; --bg3:#21262d;
+      --border:#30363d; --text:#e6edf3; --muted:#8b949e;
+      --blue:#58a6ff; --green:#3fb950; --red:#f85149;
+      --yellow:#e3b341; --radius:10px;
+    }
+    body { font-family:'Microsoft JhengHei',Arial,sans-serif; background:var(--bg); color:var(--text); height:100vh; display:flex; flex-direction:column; }
+
+    /* Topbar */
+    .topbar {
+      display:flex; align-items:center; gap:16px;
+      padding:10px 20px; background:var(--bg2);
+      border-bottom:1px solid var(--border);
+      flex-shrink:0;
+    }
+    .topbar a { color:var(--muted); text-decoration:none; font-size:13px; }
+    .topbar a:hover { color:var(--blue); }
+    .topbar-title { font-size:15px; font-weight:600; }
+
+    /* Layout */
+    .layout { display:flex; flex:1; overflow:hidden; }
+
+    /* Tree sidebar */
+    .tree {
+      width:240px; flex-shrink:0;
+      border-right:1px solid var(--border);
+      background:var(--bg2);
+      overflow-y:auto;
+      display:flex; flex-direction:column;
+    }
+    .tree-header {
+      padding:12px 14px 8px;
+      font-size:11px; font-weight:700; color:var(--muted);
+      text-transform:uppercase; letter-spacing:.07em;
+      border-bottom:1px solid var(--border);
+      flex-shrink:0;
+    }
+    .tree-body { flex:1; overflow-y:auto; padding:8px 0; }
+
+    /* Group */
+    .group-item { margin-bottom:2px; }
+    .group-header {
+      display:flex; align-items:center; gap:4px;
+      padding:5px 10px 5px 12px;
+      cursor:pointer; border-radius:6px; margin:0 4px;
+      user-select:none;
+    }
+    .group-header:hover { background:var(--bg3); }
+    .group-header.active-group { background:var(--bg3); }
+    .group-arrow { font-size:10px; color:var(--muted); width:12px; transition:transform .15s; flex-shrink:0; }
+    .group-arrow.open { transform:rotate(90deg); }
+    .group-name-text { flex:1; font-size:13px; font-weight:600; }
+    .group-name-input {
+      flex:1; background:var(--bg); border:1px solid var(--blue);
+      color:var(--text); font-size:13px; font-weight:600;
+      padding:1px 6px; border-radius:4px; outline:none;
+    }
+    .icon-btn {
+      background:none; border:none; color:var(--muted); cursor:pointer;
+      font-size:13px; padding:2px 4px; border-radius:3px; line-height:1;
+      opacity:0; transition:opacity .1s;
+    }
+    .group-header:hover .icon-btn,
+    .sub-row:hover .icon-btn { opacity:1; }
+    .icon-btn:hover { color:var(--text); background:var(--border); }
+    .icon-btn.del:hover { color:var(--red); }
+
+    /* Subgroups */
+    .sub-list { padding-left:20px; }
+    .sub-row {
+      display:flex; align-items:center; gap:4px;
+      padding:4px 10px 4px 8px;
+      cursor:pointer; border-radius:6px; margin:1px 4px;
+    }
+    .sub-row:hover { background:var(--bg3); }
+    .sub-row.active { background:#1f3a5f; color:var(--blue); }
+    .sub-name-text { flex:1; font-size:13px; }
+    .sub-name-input {
+      flex:1; background:var(--bg); border:1px solid var(--blue);
+      color:var(--text); font-size:13px;
+      padding:1px 6px; border-radius:4px; outline:none;
+    }
+
+    /* Add row */
+    .add-row {
+      display:flex; align-items:center; gap:6px;
+      padding:4px 8px; margin:2px 4px;
+    }
+    .add-input {
+      flex:1; background:var(--bg); border:1px solid var(--border);
+      color:var(--text); font-size:12px; padding:3px 8px;
+      border-radius:5px; outline:none;
+    }
+    .add-input:focus { border-color:var(--blue); }
+    .add-btn {
+      background:none; border:1px solid var(--border); color:var(--muted);
+      font-size:12px; padding:3px 8px; border-radius:5px; cursor:pointer;
+    }
+    .add-btn:hover { border-color:var(--blue); color:var(--blue); }
+
+    /* Add group button */
+    .add-group-btn {
+      margin:8px 8px 4px;
+      padding:6px 10px; width:calc(100% - 16px);
+      background:none; border:1px dashed var(--border);
+      color:var(--muted); font-size:12px; border-radius:6px;
+      cursor:pointer; text-align:left; font-family:inherit;
+    }
+    .add-group-btn:hover { border-color:var(--blue); color:var(--blue); }
+
+    /* Main content */
+    .main {
+      flex:1; overflow-y:auto;
+      padding:24px 28px;
+    }
+    .empty-state {
+      display:flex; flex-direction:column; align-items:center;
+      justify-content:center; height:100%; color:var(--muted); gap:12px;
+    }
+    .empty-state .hint { font-size:13px; }
+
+    /* Breadcrumb */
+    .breadcrumb { font-size:12px; color:var(--muted); margin-bottom:16px; }
+    .breadcrumb span { color:var(--text); }
+
+    /* Subgroup title area */
+    .sg-title-row { display:flex; align-items:center; gap:10px; margin-bottom:20px; }
+    .sg-title { font-size:22px; font-weight:700; cursor:text; }
+    .sg-title-input {
+      font-size:22px; font-weight:700;
+      background:var(--bg2); border:1px solid var(--blue);
+      color:var(--text); padding:2px 10px; border-radius:6px; outline:none;
+      flex:1;
+    }
+
+    /* Description */
+    .desc-section { margin-bottom:24px; }
+    .desc-toolbar { display:flex; justify-content:flex-end; margin-bottom:8px; gap:6px; }
+    .desc-btn {
+      padding:4px 12px; font-size:12px; border-radius:5px;
+      border:1px solid var(--border); background:var(--bg3);
+      color:var(--text); cursor:pointer; font-family:inherit;
+    }
+    .desc-btn:hover { border-color:var(--blue); color:var(--blue); }
+    .desc-btn.primary { border-color:var(--blue); background:#1f3a5f; color:var(--blue); }
+    .desc-rendered {
+      font-size:14px; line-height:1.8; color:var(--text);
+      background:var(--bg2); border:1px solid var(--border);
+      border-radius:var(--radius); padding:16px 20px; min-height:80px;
+    }
+    .desc-rendered.empty { color:var(--muted); font-style:italic; }
+    /* Markdown styles inside rendered */
+    .desc-rendered h1,.desc-rendered h2,.desc-rendered h3 { margin:12px 0 6px; font-weight:600; }
+    .desc-rendered h1 { font-size:18px; border-bottom:1px solid var(--border); padding-bottom:6px; }
+    .desc-rendered h2 { font-size:16px; }
+    .desc-rendered h3 { font-size:14px; }
+    .desc-rendered p { margin-bottom:10px; }
+    .desc-rendered ul,.desc-rendered ol { padding-left:20px; margin-bottom:10px; }
+    .desc-rendered li { margin-bottom:4px; }
+    .desc-rendered strong { color:var(--yellow); }
+    .desc-rendered em { color:var(--muted); }
+    .desc-rendered code { background:var(--bg3); padding:1px 5px; border-radius:3px; font-size:12px; }
+    .desc-rendered a { color:var(--blue); }
+    .desc-textarea {
+      width:100%; min-height:160px; padding:14px 16px;
+      background:var(--bg2); border:1px solid var(--blue);
+      color:var(--text); font-size:13px; line-height:1.7;
+      border-radius:var(--radius); outline:none; resize:vertical;
+      font-family:'Microsoft JhengHei',monospace;
+    }
+
+    /* Stocks section */
+    .stocks-section {}
+    .stocks-header {
+      display:flex; align-items:center; gap:10px;
+      margin-bottom:14px; padding-bottom:10px;
+      border-bottom:1px solid var(--border);
+    }
+    .stocks-title { font-size:14px; font-weight:600; }
+    .stock-count { font-size:12px; color:var(--muted); }
+
+    /* Stock cards grid */
+    .stock-grid {
+      display:grid;
+      grid-template-columns:repeat(auto-fill, minmax(160px, 1fr));
+      gap:10px; margin-bottom:16px;
+    }
+    .stock-card {
+      background:var(--bg2); border:1px solid var(--border);
+      border-radius:var(--radius); padding:12px 14px;
+      cursor:pointer; transition:border-color .15s;
+      position:relative;
+    }
+    .stock-card:hover { border-color:var(--blue); }
+    .stock-card-remove {
+      position:absolute; top:6px; right:6px;
+      background:none; border:none; color:var(--muted);
+      font-size:14px; cursor:pointer; line-height:1;
+      opacity:0; transition:opacity .1s;
+      border-radius:3px; padding:1px 3px;
+    }
+    .stock-card:hover .stock-card-remove { opacity:1; }
+    .stock-card-remove:hover { color:var(--red); background:rgba(248,81,73,.1); }
+    .stock-id { font-size:11px; color:var(--muted); margin-bottom:3px; }
+    .stock-name { font-size:14px; font-weight:600; margin-bottom:8px; }
+    .stock-price { font-size:18px; font-weight:700; margin-bottom:4px; }
+    .stock-change { font-size:12px; font-weight:600; }
+    .stock-score { font-size:11px; color:var(--muted); margin-top:6px; }
+    .stock-score span { font-weight:700; color:var(--text); }
+    .up { color:var(--red); }
+    .down { color:var(--green); }
+    .flat { color:var(--muted); }
+
+    /* Add stock */
+    .add-stock-row { display:flex; gap:8px; align-items:center; }
+    .add-stock-input {
+      background:var(--bg2); border:1px solid var(--border);
+      color:var(--text); font-size:13px; padding:7px 12px;
+      border-radius:6px; outline:none; width:140px;
+    }
+    .add-stock-input:focus { border-color:var(--blue); }
+    .add-stock-btn {
+      padding:7px 16px; border-radius:6px;
+      border:1px solid var(--blue); background:#1f3a5f;
+      color:var(--blue); font-size:13px; cursor:pointer;
+      font-family:inherit;
+    }
+    .add-stock-btn:hover { background:#1f4f80; }
+    .add-stock-err { font-size:12px; color:var(--red); }
+
+    /* ── Stock Sections ── */
+    .stock-section {
+      margin-bottom:16px; border:1px solid var(--border);
+      border-radius:var(--radius); overflow:hidden;
+    }
+    .stock-section-header {
+      display:flex; align-items:center; gap:8px;
+      padding:8px 14px; background:var(--bg2);
+      border-bottom:1px solid var(--border);
+    }
+    .stock-section-name {
+      flex:1; font-size:13px; font-weight:600; cursor:text;
+    }
+    .stock-section-name-input {
+      flex:1; background:var(--bg); border:1px solid var(--blue);
+      color:var(--text); font-size:13px; font-weight:600;
+      padding:1px 8px; border-radius:4px; outline:none;
+    }
+    .stock-section-body {
+      padding:12px; min-height:80px;
+      display:grid; grid-template-columns:repeat(auto-fill,minmax(160px,1fr)); gap:10px;
+      transition:background .15s;
+    }
+    .stock-section-body.drag-over {
+      background:rgba(31,111,235,.08);
+      outline:2px dashed var(--blue); outline-offset:-4px;
+    }
+    .stock-section-empty {
+      color:var(--muted); font-size:12px;
+      grid-column:1/-1; padding:8px 0;
+      display:flex; align-items:center; justify-content:center;
+      pointer-events:none;
+    }
+    .add-section-btn {
+      margin-bottom:14px;
+      padding:6px 14px; border-radius:6px;
+      border:1px dashed var(--border); background:none;
+      color:var(--muted); font-size:12px; cursor:pointer;
+      font-family:inherit;
+    }
+    .add-section-btn:hover { border-color:var(--blue); color:var(--blue); }
+
+    /* Dragging state */
+    .stock-card.dragging { opacity:.4; }
+
+    /* ── Group drag handle ── */
+    .drag-handle {
+      color:var(--muted); cursor:grab; font-size:12px;
+      padding:2px 3px; opacity:0; flex-shrink:0;
+      user-select:none;
+    }
+    .group-header:hover .drag-handle { opacity:1; }
+    .group-item.drag-over-top    { border-top:2px solid var(--blue); }
+    .group-item.drag-over-bottom { border-bottom:2px solid var(--blue); }
+    .group-item.group-dragging   { opacity:.4; }
+  </style>
+</head>
+<body>
+
+<div class="topbar">
+  <a href="/">← 台股分析系統</a>
+  <span class="topbar-title">產業分類</span>
+</div>
+
+<div class="layout">
+  <!-- Left tree -->
+  <div class="tree">
+    <div class="tree-header">群組</div>
+    <div class="tree-body" id="treeBody"></div>
+    <button class="add-group-btn" onclick="startAddGroup()">＋ 新增群組</button>
+  </div>
+
+  <!-- Main content -->
+  <div class="main" id="main">
+    <div class="empty-state" id="emptyState">
+      <div style="font-size:36px">📂</div>
+      <div style="font-size:16px;font-weight:600">選擇或新增一個子群組</div>
+      <div class="hint">在左側建立群組和子群組，然後加入類股</div>
+    </div>
+    <div id="subgroupPanel" style="display:none"></div>
+  </div>
+</div>
+
+<script>
+/* ══════════════════════════════
+   State
+══════════════════════════════ */
+let tree = [];          // full tree from server
+let currentSub = null;  // { id, group_id, name, description }
+let editingDesc = false;
+
+/* ══════════════════════════════
+   Init
+══════════════════════════════ */
+loadTree();
+
+async function loadTree() {
+  const r = await fetch('/api/sectors');
+  const j = await r.json();
+  if (!j.success) return;
+  tree = j.data;
+  renderTree();
+  // re-select current subgroup if still exists
+  if (currentSub) {
+    const sub = findSub(currentSub.id);
+    if (sub) selectSub(sub, true);
+  }
+}
+
+function findSub(id) {
+  for (const g of tree) for (const s of g.subgroups) if (s.id === id) return s;
+  return null;
+}
+function findGroup(id) { return tree.find(g => g.id === id); }
+
+/* ══════════════════════════════
+   Tree render
+══════════════════════════════ */
+function renderTree() {
+  const body = document.getElementById('treeBody');
+  body.innerHTML = '';
+  tree.forEach(g => {
+    const open = g.subgroups.some(s => s.id === currentSub?.id);
+    const gi = document.createElement('div');
+    gi.className = 'group-item';
+    gi.dataset.gid = g.id;
+    gi.innerHTML = `
+      <div class="group-header ${open ? 'active-group' : ''}" onclick="toggleGroup(this, ${g.id})">
+        <span class="drag-handle" title="拖曳排序">⠿</span>
+        <span class="group-arrow ${open ? 'open' : ''}">▶</span>
+        <span class="group-name-text" ondblclick="editGroupName(event,${g.id})">${esc(g.name)}</span>
+        <button class="icon-btn" onclick="event.stopPropagation();startAddSub(${g.id})" title="新增子群組">＋</button>
+        <button class="icon-btn del" onclick="event.stopPropagation();deleteGroup(${g.id})" title="刪除群組">✕</button>
+      </div>
+      <div class="sub-list" style="display:${open ? 'block' : 'none'}">
+        ${g.subgroups.map(s => `
+          <div class="sub-row ${s.id === currentSub?.id ? 'active' : ''}"
+               data-sid="${s.id}" onclick="selectSub(${JSON.stringify(s).replace(/"/g,'&quot;')})">
+            <span class="sub-name-text" ondblclick="editSubName(event,${s.id})">${esc(s.name)}</span>
+            <button class="icon-btn del" onclick="event.stopPropagation();deleteSub(${s.id})" title="刪除子群組">✕</button>
+          </div>
+        `).join('')}
+        <div class="sub-add-slot" id="sub-add-${g.id}" style="display:none">
+          <div class="add-row">
+            <input class="add-input" placeholder="子群組名稱" id="sub-input-${g.id}"
+              onkeydown="if(event.key==='Enter')confirmAddSub(${g.id});if(event.key==='Escape')cancelAddSub(${g.id})">
+            <button class="add-btn" onclick="confirmAddSub(${g.id})">確定</button>
+          </div>
+        </div>
+      </div>
+    `;
+    body.appendChild(gi);
+  });
+  // Enable drag-to-reorder after rendering
+  initGroupDrag();
+}
+
+function esc(str) {
+  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+/* ══════════════════════════════
+   Tree interactions
+══════════════════════════════ */
+function toggleGroup(header, gid) {
+  const arrow = header.querySelector('.group-arrow');
+  const subList = header.nextElementSibling;
+  const open = subList.style.display === 'block';
+  subList.style.display = open ? 'none' : 'block';
+  arrow.classList.toggle('open', !open);
+}
+
+function editGroupName(e, gid) {
+  e.stopPropagation();
+  const span = e.target;
+  const old = span.textContent;
+  const input = document.createElement('input');
+  input.className = 'group-name-input';
+  input.value = old;
+  span.replaceWith(input);
+  input.focus(); input.select();
+  const save = async () => {
+    const name = input.value.trim() || old;
+    await fetch(`/api/sectors/groups/${gid}`, { method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({name}) });
+    await loadTree();
+  };
+  input.addEventListener('blur', save);
+  input.addEventListener('keydown', e => { if(e.key==='Enter') save(); if(e.key==='Escape') loadTree(); });
+}
+
+function editSubName(e, sid) {
+  e.stopPropagation();
+  const span = e.target;
+  const old = span.textContent;
+  const input = document.createElement('input');
+  input.className = 'sub-name-input';
+  input.value = old;
+  span.replaceWith(input);
+  input.focus(); input.select();
+  const save = async () => {
+    const name = input.value.trim() || old;
+    const sub = findSub(sid);
+    await fetch(`/api/sectors/subgroups/${sid}`, { method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({name, description: sub?.description||''}) });
+    if (currentSub?.id === sid) currentSub.name = name;
+    await loadTree();
+    if (currentSub?.id === sid) renderPanel();
+  };
+  input.addEventListener('blur', save);
+  input.addEventListener('keydown', e => { if(e.key==='Enter') save(); if(e.key==='Escape') loadTree(); });
+}
+
+async function deleteGroup(gid) {
+  const g = findGroup(gid);
+  if (!confirm(`刪除群組「${g?.name}」及所有子群組？`)) return;
+  await fetch(`/api/sectors/groups/${gid}`, { method:'DELETE' });
+  if (g?.subgroups.some(s => s.id === currentSub?.id)) {
+    currentSub = null;
+    showEmpty();
+  }
+  await loadTree();
+}
+
+async function deleteSub(sid) {
+  const sub = findSub(sid);
+  if (!confirm(`刪除子群組「${sub?.name}」？`)) return;
+  await fetch(`/api/sectors/subgroups/${sid}`, { method:'DELETE' });
+  if (currentSub?.id === sid) { currentSub = null; showEmpty(); }
+  await loadTree();
+}
+
+/* ══════════════════════════════
+   Add group
+══════════════════════════════ */
+function startAddGroup() {
+  const body = document.getElementById('treeBody');
+  const existing = document.getElementById('new-group-row');
+  if (existing) { existing.querySelector('input').focus(); return; }
+  const div = document.createElement('div');
+  div.id = 'new-group-row';
+  div.className = 'add-row';
+  div.style.margin = '4px';
+  div.innerHTML = `
+    <input class="add-input" placeholder="群組名稱" id="new-group-input"
+      onkeydown="if(event.key==='Enter')confirmAddGroup();if(event.key==='Escape')cancelAddGroup()">
+    <button class="add-btn" onclick="confirmAddGroup()">確定</button>
+  `;
+  body.appendChild(div);
+  document.getElementById('new-group-input').focus();
+}
+
+async function confirmAddGroup() {
+  const input = document.getElementById('new-group-input');
+  const name = input?.value.trim();
+  if (!name) return;
+  await fetch('/api/sectors/groups', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({name}) });
+  await loadTree();
+}
+
+function cancelAddGroup() { document.getElementById('new-group-row')?.remove(); }
+
+/* ══════════════════════════════
+   Add subgroup
+══════════════════════════════ */
+function startAddSub(gid) {
+  // ensure group is open
+  const gi = document.querySelector(`[data-gid="${gid}"]`);
+  if (gi) {
+    const subList = gi.querySelector('.sub-list');
+    const arrow = gi.querySelector('.group-arrow');
+    if (subList) { subList.style.display = 'block'; arrow?.classList.add('open'); }
+  }
+  const slot = document.getElementById(`sub-add-${gid}`);
+  if (slot) { slot.style.display = 'block'; document.getElementById(`sub-input-${gid}`)?.focus(); }
+}
+
+async function confirmAddSub(gid) {
+  const input = document.getElementById(`sub-input-${gid}`);
+  const name = input?.value.trim();
+  if (!name) return;
+  await fetch(`/api/sectors/groups/${gid}/subgroups`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({name, description:''}) });
+  await loadTree();
+}
+
+function cancelAddSub(gid) {
+  const slot = document.getElementById(`sub-add-${gid}`);
+  if (slot) { slot.style.display = 'none'; }
+}
+
+/* ══════════════════════════════
+   Subgroup panel
+══════════════════════════════ */
+function showEmpty() {
+  document.getElementById('emptyState').style.display = 'flex';
+  document.getElementById('subgroupPanel').style.display = 'none';
+}
+
+function selectSub(subObj, skipLoad) {
+  currentSub = typeof subObj === 'string' ? JSON.parse(subObj) : subObj;
+  editingDesc = false;
+  renderTree(); // update active highlight
+  renderPanel();
+  if (!skipLoad) loadStocks();
+}
+
+function renderPanel() {
+  document.getElementById('emptyState').style.display = 'none';
+  const panel = document.getElementById('subgroupPanel');
+  panel.style.display = 'block';
+  const group = tree.find(g => g.subgroups.some(s => s.id === currentSub.id));
+  panel.innerHTML = `
+    <div class="breadcrumb">${esc(group?.name||'')} &rsaquo; <span>${esc(currentSub.name)}</span></div>
+
+    <div class="sg-title-row">
+      <div class="sg-title" ondblclick="editPanelTitle()">${esc(currentSub.name)}</div>
+    </div>
+
+    <div class="desc-section">
+      <div class="desc-toolbar">
+        <button class="desc-btn" id="editDescBtn" onclick="toggleEditDesc()">✏ 編輯介紹</button>
+      </div>
+      <div id="descView" class="desc-rendered ${currentSub.description ? '' : 'empty'}">
+        ${currentSub.description ? marked.parse(currentSub.description) : '（尚無介紹，點「編輯介紹」新增）'}
+      </div>
+      <div id="descEdit" style="display:none">
+        <textarea class="desc-textarea" id="descTextarea" placeholder="支援 Markdown 格式...">${esc(currentSub.description||'')}</textarea>
+        <div class="desc-toolbar" style="margin-top:8px">
+          <button class="desc-btn" onclick="cancelEditDesc()">取消</button>
+          <button class="desc-btn primary" onclick="saveDesc()">儲存</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="stocks-section">
+      <div class="stocks-header">
+        <span class="stocks-title">類股</span>
+        <span class="stock-count" id="stockCount"></span>
+        <button class="add-section-btn" onclick="addSection()">＋ 新增分類</button>
+      </div>
+      <div id="stockSections">
+        <div style="color:var(--muted);font-size:13px">載入中...</div>
+      </div>
+      <div class="add-stock-row" style="margin-top:8px">
+        <input class="add-stock-input" id="addStockInput" placeholder="輸入股票代號"
+          onkeydown="if(event.key==='Enter')addStock()">
+        <button class="add-stock-btn" onclick="addStock()">＋ 加入</button>
+        <span class="add-stock-err" id="addStockErr"></span>
+      </div>
+    </div>
+  `;
+}
+
+function editPanelTitle() {
+  const titleEl = document.querySelector('.sg-title');
+  if (!titleEl) return;
+  const old = currentSub.name;
+  const input = document.createElement('input');
+  input.className = 'sg-title-input';
+  input.value = old;
+  titleEl.replaceWith(input);
+  input.focus(); input.select();
+  const save = async () => {
+    const name = input.value.trim() || old;
+    await fetch(`/api/sectors/subgroups/${currentSub.id}`, {
+      method:'PUT', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({name, description: currentSub.description||''})
+    });
+    currentSub.name = name;
+    await loadTree();
+    renderPanel();
+    loadStocks();
+  };
+  input.addEventListener('blur', save);
+  input.addEventListener('keydown', e => { if(e.key==='Enter') save(); if(e.key==='Escape'){ currentSub.name=old; renderPanel(); loadStocks(); } });
+}
+
+function toggleEditDesc() {
+  editingDesc = !editingDesc;
+  document.getElementById('descView').style.display = editingDesc ? 'none' : 'block';
+  document.getElementById('descEdit').style.display = editingDesc ? 'block' : 'none';
+  document.getElementById('editDescBtn').textContent = editingDesc ? '✕ 取消編輯' : '✏ 編輯介紹';
+  if (editingDesc) document.getElementById('descTextarea')?.focus();
+}
+
+function cancelEditDesc() { editingDesc = false; toggleEditDesc(); }
+
+async function saveDesc() {
+  const md = document.getElementById('descTextarea')?.value || '';
+  currentSub.description = md;
+  await fetch(`/api/sectors/subgroups/${currentSub.id}`, {
+    method:'PUT', headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({name: currentSub.name, description: md})
+  });
+  editingDesc = false;
+  const view = document.getElementById('descView');
+  view.innerHTML = md ? marked.parse(md) : '（尚無介紹，點「編輯介紹」新增）';
+  view.className = `desc-rendered ${md ? '' : 'empty'}`;
+  document.getElementById('descEdit').style.display = 'none';
+  document.getElementById('descView').style.display = 'block';
+  document.getElementById('editDescBtn').textContent = '✏ 編輯介紹';
+}
+
+/* ══════════════════════════════
+   Stocks & Sections
+══════════════════════════════ */
+let currentStocks   = [];
+let currentSections = []; // [{id, name}, ...]
+
+async function loadStocks() {
+  if (!currentSub) return;
+  const [sr, wr] = await Promise.all([
+    fetch(`/api/sectors/subgroups/${currentSub.id}/sections`),
+    fetch(`/api/sectors/subgroups/${currentSub.id}/stocks`)
+  ]);
+  const sj = await sr.json();
+  const wj = await wr.json();
+  if (sj.success) currentSections = sj.data;
+  if (wj.success) currentStocks   = wj.data;
+  renderSections();
+  currentStocks.forEach(s => loadScore(s.stock_id));
+}
+
+/* ─── Render all sections + uncategorized ─── */
+function renderSections() {
+  const container = document.getElementById('stockSections');
+  const cnt = document.getElementById('stockCount');
+  if (!container) return;
+  if (cnt) cnt.textContent = `${currentStocks.length} 檔`;
+
+  const buckets = [];
+
+  // Named sections
+  currentSections.forEach(sec => {
+    buckets.push({
+      id: sec.id,
+      name: sec.name,
+      stocks: currentStocks.filter(s => s.section_id === sec.id),
+      deletable: true
+    });
+  });
+
+  // Uncategorized
+  const unsectioned = currentStocks.filter(s => !s.section_id ||
+    !currentSections.find(sec => sec.id === s.section_id));
+  buckets.push({ id: null, name: '未分類', stocks: unsectioned, deletable: false });
+
+  container.innerHTML = buckets.map(b => renderSectionHTML(b)).join('');
+
+  // Attach drop listeners to section bodies
+  container.querySelectorAll('.stock-section-body').forEach(body => {
+    body.addEventListener('dragover', e => {
+      e.preventDefault();
+      body.classList.add('drag-over');
+    });
+    body.addEventListener('dragleave', () => body.classList.remove('drag-over'));
+    body.addEventListener('drop', e => {
+      e.preventDefault();
+      body.classList.remove('drag-over');
+      const stockId   = e.dataTransfer.getData('stockId');
+      const sectionId = body.dataset.sectionId === 'null' ? null : parseInt(body.dataset.sectionId);
+      moveStockToSection(stockId, sectionId);
+    });
+  });
+}
+
+function renderSectionHTML(bucket) {
+  const cardsHTML = bucket.stocks.length
+    ? bucket.stocks.map(s => stockCardHTML(s)).join('')
+    : '<div class="stock-section-empty">拖曳類股到此</div>';
+
+  const header = bucket.deletable
+    ? `<div class="stock-section-header">
+         <span class="stock-section-name" ondblclick="editSectionName(event,${bucket.id})">${esc(bucket.name)}</span>
+         <button class="icon-btn del" onclick="deleteSection(${bucket.id})" title="刪除分類">✕</button>
+       </div>`
+    : `<div class="stock-section-header">
+         <span class="stock-section-name" style="color:var(--muted)">${esc(bucket.name)}</span>
+       </div>`;
+
+  return `
+    <div class="stock-section">
+      ${header}
+      <div class="stock-section-body" data-section-id="${bucket.id}">
+        ${cardsHTML}
+      </div>
+    </div>`;
+}
+
+function stockCardHTML(s) {
+  const chg    = parseFloat(s.change_percent);
+  const cls    = isNaN(chg) ? 'flat' : chg > 0 ? 'up' : chg < 0 ? 'down' : 'flat';
+  const chgStr = isNaN(chg) ? '—' : (chg > 0 ? '+' : '') + chg.toFixed(2) + '%';
+  const price  = s.close_price != null ? parseFloat(s.close_price).toFixed(2) : '—';
+  return `
+    <div class="stock-card" draggable="true"
+         ondragstart="onCardDragStart(event,'${s.stock_id}')"
+         ondragend="onCardDragEnd(event)"
+         onclick="goStock('${s.stock_id}')">
+      <button class="stock-card-remove" onclick="event.stopPropagation();removeStock('${s.stock_id}')" title="移除">✕</button>
+      <div class="stock-id">${esc(s.stock_id)}</div>
+      <div class="stock-name">${esc(s.stock_name||s.stock_id)}</div>
+      <div class="stock-price ${cls}">${price}</div>
+      <div class="stock-change ${cls}">${chgStr}</div>
+      <div class="stock-score" id="score-${s.stock_id}">評分 <span>—</span></div>
+    </div>`;
+}
+
+/* ─── Stock card drag ─── */
+function onCardDragStart(e, stockId) {
+  e.dataTransfer.setData('stockId', stockId);
+  e.dataTransfer.effectAllowed = 'move';
+  setTimeout(() => e.target.classList.add('dragging'), 0);
+}
+function onCardDragEnd(e) { e.target.classList.remove('dragging'); }
+
+async function moveStockToSection(stockId, sectionId) {
+  const stock = currentStocks.find(s => s.stock_id === stockId);
+  if (!stock) return;
+  if (stock.section_id === sectionId) return;
+  stock.section_id = sectionId;
+  renderSections();
+  currentStocks.forEach(s => loadScore(s.stock_id));
+  await fetch(`/api/sectors/subgroups/${currentSub.id}/stocks/${stockId}/section`, {
+    method:'PUT', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ section_id: sectionId })
+  });
+}
+
+/* ─── Sections CRUD ─── */
+async function addSection() {
+  const name = prompt('分類名稱：');
+  if (!name?.trim()) return;
+  await fetch(`/api/sectors/subgroups/${currentSub.id}/sections`, {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ name: name.trim() })
+  });
+  await loadStocks();
+}
+
+function editSectionName(e, sectionId) {
+  e.stopPropagation();
+  const span = e.target;
+  const old  = span.textContent;
+  const input = document.createElement('input');
+  input.className = 'stock-section-name-input';
+  input.value = old;
+  span.replaceWith(input);
+  input.focus(); input.select();
+  const save = async () => {
+    const name = input.value.trim() || old;
+    const sec = currentSections.find(s => s.id === sectionId);
+    if (sec) sec.name = name;
+    await fetch(`/api/sectors/sections/${sectionId}`, {
+      method:'PUT', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ name })
+    });
+    renderSections();
+    currentStocks.forEach(s => loadScore(s.stock_id));
+  };
+  input.addEventListener('blur', save);
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Enter') save();
+    if (e.key === 'Escape') { renderSections(); }
+  });
+}
+
+async function deleteSection(sectionId) {
+  if (!confirm('刪除此分類？類股將移至未分類。')) return;
+  await fetch(`/api/sectors/sections/${sectionId}`, { method:'DELETE' });
+  currentSections = currentSections.filter(s => s.id !== sectionId);
+  currentStocks.forEach(s => { if (s.section_id === sectionId) s.section_id = null; });
+  renderSections();
+  currentStocks.forEach(s => loadScore(s.stock_id));
+}
+
+/* ─── Score / nav ─── */
+async function loadScore(stockId) {
+  try {
+    const r = await fetch(`/api/stocks/${stockId}/score`);
+    const j = await r.json();
+    const el = document.getElementById(`score-${stockId}`);
+    if (!el) return;
+    const score = j?.score?.total ?? j?.total_score;
+    if (score != null) {
+      const color = score >= 70 ? 'var(--green)' : score >= 50 ? 'var(--yellow)' : 'var(--red)';
+      el.innerHTML = `評分 <span style="color:${color}">${score}</span>`;
+    }
+  } catch {}
+}
+
+function goStock(stockId) { window.open(`/chart.html?id=${stockId}`, '_blank'); }
+
+async function addStock() {
+  const input = document.getElementById('addStockInput');
+  const err   = document.getElementById('addStockErr');
+  const id    = input?.value.trim().toUpperCase();
+  if (!id) return;
+  err.textContent = '';
+  const r = await fetch(`/api/sectors/subgroups/${currentSub.id}/stocks`, {
+    method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({stock_id: id})
+  });
+  const j = await r.json();
+  if (!j.success) { err.textContent = j.error || '加入失敗'; return; }
+  input.value = '';
+  loadStocks();
+}
+
+async function removeStock(stockId) {
+  await fetch(`/api/sectors/subgroups/${currentSub.id}/stocks/${stockId}`, { method:'DELETE' });
+  currentStocks = currentStocks.filter(s => s.stock_id !== stockId);
+  renderSections();
+}
+
+/* ══════════════════════════════
+   Group drag-to-reorder
+══════════════════════════════ */
+let dragSrcGroupId = null;
+
+function initGroupDrag() {
+  const body = document.getElementById('treeBody');
+  body.querySelectorAll('.group-item').forEach(item => {
+    const gid = parseInt(item.dataset.gid);
+
+    item.setAttribute('draggable', 'true');
+    item.addEventListener('dragstart', e => {
+      dragSrcGroupId = gid;
+      e.dataTransfer.effectAllowed = 'move';
+      setTimeout(() => item.classList.add('group-dragging'), 0);
+    });
+    item.addEventListener('dragend', () => {
+      item.classList.remove('group-dragging');
+      body.querySelectorAll('.group-item').forEach(i => {
+        i.classList.remove('drag-over-top', 'drag-over-bottom');
+      });
+    });
+    item.addEventListener('dragover', e => {
+      if (dragSrcGroupId === gid) return;
+      e.preventDefault();
+      const rect = item.getBoundingClientRect();
+      const mid  = rect.top + rect.height / 2;
+      body.querySelectorAll('.group-item').forEach(i => i.classList.remove('drag-over-top','drag-over-bottom'));
+      item.classList.add(e.clientY < mid ? 'drag-over-top' : 'drag-over-bottom');
+    });
+    item.addEventListener('dragleave', () => {
+      item.classList.remove('drag-over-top', 'drag-over-bottom');
+    });
+    item.addEventListener('drop', e => {
+      e.preventDefault();
+      if (dragSrcGroupId === gid) return;
+      item.classList.remove('drag-over-top', 'drag-over-bottom');
+      const rect   = item.getBoundingClientRect();
+      const before = e.clientY < rect.top + rect.height / 2;
+      reorderGroup(dragSrcGroupId, gid, before);
+    });
+  });
+}
+
+async function reorderGroup(srcId, targetId, before) {
+  const srcIdx    = tree.findIndex(g => g.id === srcId);
+  const targetIdx = tree.findIndex(g => g.id === targetId);
+  if (srcIdx === -1 || targetIdx === -1) return;
+  const [moved] = tree.splice(srcIdx, 1);
+  const newIdx  = tree.findIndex(g => g.id === targetId);
+  tree.splice(before ? newIdx : newIdx + 1, 0, moved);
+  renderTree();
+  initGroupDrag();
+  const order = tree.map(g => g.id);
+  await fetch('/api/sectors/groups/reorder', {
+    method:'PUT', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ order })
+  });
+}
+</script>
+</body>
+</html>

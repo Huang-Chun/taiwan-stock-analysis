@@ -81,7 +81,7 @@ async function fetchAndSaveMarginTrading(date) {
 
     for (const r of records) {
       await connection.query(
-        `INSERT INTO margin_trading
+        `INSERT IGNORE INTO margin_trading
         (stock_id, trade_date, margin_buy, margin_sell, margin_balance, margin_limit,
          short_buy, short_sell, short_balance, short_limit, offset_volume)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)

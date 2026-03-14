@@ -3,6 +3,8 @@ const { pool } = require('../database/connection');
 const path = require('path');
 require('dotenv').config();
 
+const Anthropic = require('@anthropic-ai/sdk');
+
 const { detectAllSignals, scoreStock, screenByStrategy } = require('../analysis/strategies');
 const { analyzeInstitutionalTrend, detectAccumulation, analyzeConsensus, analyzeMarginTrend, screenByInstitutional } = require('../analysis/institutionalAnalysis');
 const { analyzeRevenueTrend, calculateValuation, getFinancialSummary, scoreFundamental } = require('../analysis/fundamentalAnalysis');
@@ -346,17 +348,22 @@ function calcKDSeries(highs, lows, closes, period = 9) {
 app.get('/api/stocks/:stockId/indicators', async (req, res) => {
   try {
     const { stockId } = req.params;
-    const days = Math.min(parseInt(req.query.days) || 120, 500);
-    // 多抓 60 筆暖機資料讓 MACD/KD 更準確
+    const startDate = req.query.startDate;
+    if (!startDate) return res.json({ success: true, data: { dates:[], rsi:[], macd:[], macd_signal:[], macd_histogram:[], kd_k:[], kd_d:[] } });
+
+    // 往前多抓 90 天日曆日（約 60 交易日）供 MACD/KD 暖機
+    const warmup = new Date(new Date(startDate).getTime() - 90 * 24 * 60 * 60 * 1000);
+    const warmupStr = warmup.toISOString().split('T')[0];
+
     const [rows] = await pool.query(
       `SELECT trade_date, close_price, high_price, low_price
-       FROM daily_prices WHERE stock_id = ?
-       ORDER BY trade_date DESC LIMIT ?`,
-      [stockId, days + 60]
+       FROM daily_prices WHERE stock_id = ? AND trade_date >= ?
+       ORDER BY trade_date ASC`,
+      [stockId, warmupStr]
     );
     if (rows.length === 0) return res.json({ success: true, data: { dates:[], rsi:[], macd:[], macd_signal:[], macd_histogram:[], kd_k:[], kd_d:[] } });
 
-    const all    = rows.reverse();
+    const all    = rows;
     const closes = all.map(r => parseFloat(r.close_price));
     const highs  = all.map(r => parseFloat(r.high_price));
     const lows   = all.map(r => parseFloat(r.low_price));
@@ -365,14 +372,14 @@ app.get('/api/stocks/:stockId/indicators', async (req, res) => {
     const macdObj = calcMACDSeries(closes);
     const kdObj   = calcKDSeries(highs, lows, closes);
 
-    // 只回傳最近 days 筆（去掉暖機資料）
-    const trim = arr => arr.slice(-days);
-    const trimDates = all.slice(-days).map(r => toDateStr(r.trade_date));
+    // 只回傳 startDate 之後的資料
+    const dispIdx = all.findIndex(r => toDateStr(r.trade_date) >= startDate);
+    const trim = arr => arr.slice(dispIdx);
 
     res.json({
       success: true,
       data: {
-        dates:          trimDates,
+        dates:          all.slice(dispIdx).map(r => toDateStr(r.trade_date)),
         rsi:            trim(rsiArr),
         macd:           trim(macdObj.macd),
         macd_signal:    trim(macdObj.signal),
@@ -421,26 +428,28 @@ app.get('/api/stocks/:stockId/institutional/daily', async (req, res) => {
 app.get('/api/stocks/:stockId/kline', async (req, res) => {
   try {
     const { stockId } = req.params;
-    const days = Math.min(parseInt(req.query.days) || 120, 500);
+    const startDate = req.query.startDate;
+    if (!startDate) return res.status(400).json({ success: false, error: 'startDate 必填' });
 
-    // 多抓 60 筆讓 MA60 能有足夠的暖機資料
+    // 往前多抓 90 天日曆日（約 60 交易日）供 MA60 暖機
+    const warmup = new Date(new Date(startDate).getTime() - 90 * 24 * 60 * 60 * 1000);
+    const warmupStr = warmup.toISOString().split('T')[0];
+
     const [rows] = await pool.query(
       `SELECT trade_date, open_price, high_price, low_price, close_price, volume, change_percent
        FROM daily_prices
-       WHERE stock_id = ?
-       ORDER BY trade_date DESC
-       LIMIT ?`,
-      [stockId, days + 60]
+       WHERE stock_id = ? AND trade_date >= ?
+       ORDER BY trade_date ASC`,
+      [stockId, warmupStr]
     );
 
     if (rows.length === 0) {
       return res.status(404).json({ success: false, error: '無資料' });
     }
 
-    const all = rows.reverse();
+    const all    = rows;
     const closes = all.map(r => parseFloat(r.close_price));
 
-    // 在 server 端直接算 MA 序列，不依賴 technical_indicators
     const calcMA = (arr, n) => arr.map((_, i) =>
       i < n - 1 ? null : +( arr.slice(i - n + 1, i + 1).reduce((a, b) => a + b, 0) / n ).toFixed(2)
     );
@@ -450,14 +459,13 @@ app.get('/api/stocks/:stockId/kline', async (req, res) => {
     const ma20 = calcMA(closes, 20);
     const ma60 = calcMA(closes, 60);
 
-    // 只回傳使用者要求的天數，但 MA 已有完整暖機
-    const offset = all.length - days;
+    // 只顯示 startDate 之後的資料（MA 已用完整暖機計算）
+    const offset = all.findIndex(r => toDateStr(r.trade_date) >= startDate);
     const data   = all.slice(offset);
 
-    // 偵測歷史 MA 交叉訊號（在顯示範圍內）
+    // 偵測顯示範圍內的 MA 交叉訊號
     const signals = [];
-    for (let i = 1; i < all.length; i++) {
-      if (i < offset) continue; // 只回傳顯示範圍內的訊號
+    for (let i = Math.max(1, offset); i < all.length; i++) {
       if (ma5[i] == null || ma20[i] == null || ma5[i-1] == null || ma20[i-1] == null) continue;
       const dateStr = toDateStr(all[i].trade_date);
       if (ma5[i-1] <= ma20[i-1] && ma5[i] > ma20[i])
@@ -514,6 +522,183 @@ app.get('/api/health', async (req, res) => {
   } catch (error) {
     res.status(500).json({ success: false, status: 'unhealthy', error: error.message });
   }
+});
+
+// ── Sectors ──────────────────────────────────────────────────
+
+// GET all groups with subgroups
+app.get('/api/sectors', async (req, res) => {
+  try {
+    const [groups] = await pool.query('SELECT * FROM sector_groups ORDER BY sort_order, id');
+    const [subgroups] = await pool.query('SELECT * FROM sector_subgroups ORDER BY sort_order, id');
+    const tree = groups.map(g => ({
+      ...g,
+      subgroups: subgroups.filter(s => s.group_id === g.id)
+    }));
+    res.json({ success: true, data: tree });
+  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
+});
+
+// POST create group
+app.post('/api/sectors/groups', async (req, res) => {
+  try {
+    const { name } = req.body;
+    if (!name) return res.status(400).json({ success: false, error: 'name required' });
+    const [r] = await pool.query('INSERT INTO sector_groups (name) VALUES (?)', [name]);
+    res.json({ success: true, id: r.insertId });
+  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
+});
+
+// PUT reorder groups (must come before /:id route)
+app.put('/api/sectors/groups/reorder', async (req, res) => {
+  try {
+    const { order } = req.body; // array of group ids in new order
+    if (!Array.isArray(order)) return res.status(400).json({ success: false, error: 'order array required' });
+    for (let i = 0; i < order.length; i++) {
+      await pool.query('UPDATE sector_groups SET sort_order=? WHERE id=?', [i, order[i]]);
+    }
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
+});
+
+// PUT update group
+app.put('/api/sectors/groups/:id', async (req, res) => {
+  try {
+    const { name } = req.body;
+    await pool.query('UPDATE sector_groups SET name=? WHERE id=?', [name, req.params.id]);
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
+});
+
+// DELETE group
+app.delete('/api/sectors/groups/:id', async (req, res) => {
+  try {
+    await pool.query('DELETE FROM sector_groups WHERE id=?', [req.params.id]);
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
+});
+
+// POST create subgroup
+app.post('/api/sectors/groups/:gid/subgroups', async (req, res) => {
+  try {
+    const { name, description = '' } = req.body;
+    if (!name) return res.status(400).json({ success: false, error: 'name required' });
+    const [r] = await pool.query(
+      'INSERT INTO sector_subgroups (group_id, name, description) VALUES (?,?,?)',
+      [req.params.gid, name, description]
+    );
+    res.json({ success: true, id: r.insertId });
+  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
+});
+
+// PUT update subgroup
+app.put('/api/sectors/subgroups/:id', async (req, res) => {
+  try {
+    const { name, description } = req.body;
+    await pool.query('UPDATE sector_subgroups SET name=?, description=? WHERE id=?',
+      [name, description, req.params.id]);
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
+});
+
+// DELETE subgroup
+app.delete('/api/sectors/subgroups/:id', async (req, res) => {
+  try {
+    await pool.query('DELETE FROM sector_subgroups WHERE id=?', [req.params.id]);
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
+});
+
+// GET stocks in subgroup (with latest price + change_percent)
+app.get('/api/sectors/subgroups/:id/stocks', async (req, res) => {
+  try {
+    const [rows] = await pool.query(`
+      SELECT ss.stock_id, st.stock_name, ss.section_id,
+             dp.close_price, dp.change_percent
+      FROM sector_stocks ss
+      JOIN stocks st ON ss.stock_id = st.stock_id
+      LEFT JOIN daily_prices dp ON ss.stock_id = dp.stock_id
+        AND dp.trade_date = (SELECT MAX(trade_date) FROM daily_prices WHERE stock_id = ss.stock_id)
+      WHERE ss.subgroup_id = ?
+      ORDER BY ss.sort_order, ss.stock_id
+    `, [req.params.id]);
+    res.json({ success: true, data: rows });
+  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
+});
+
+// POST add stock to subgroup
+app.post('/api/sectors/subgroups/:id/stocks', async (req, res) => {
+  try {
+    const { stock_id } = req.body;
+    if (!stock_id) return res.status(400).json({ success: false, error: 'stock_id required' });
+    // verify stock exists
+    const [rows] = await pool.query('SELECT stock_id FROM stocks WHERE stock_id=?', [stock_id]);
+    if (!rows.length) return res.status(404).json({ success: false, error: '股票代號不存在' });
+    await pool.query('INSERT IGNORE INTO sector_stocks (subgroup_id, stock_id) VALUES (?,?)',
+      [req.params.id, stock_id]);
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
+});
+
+// DELETE stock from subgroup
+app.delete('/api/sectors/subgroups/:sid/stocks/:stockId', async (req, res) => {
+  try {
+    await pool.query('DELETE FROM sector_stocks WHERE subgroup_id=? AND stock_id=?',
+      [req.params.sid, req.params.stockId]);
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
+});
+
+// Sections CRUD
+app.get('/api/sectors/subgroups/:id/sections', async (req, res) => {
+  try {
+    const [sections] = await pool.query(
+      'SELECT * FROM sector_stock_sections WHERE subgroup_id=? ORDER BY sort_order, id',
+      [req.params.id]
+    );
+    res.json({ success: true, data: sections });
+  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
+});
+
+app.post('/api/sectors/subgroups/:id/sections', async (req, res) => {
+  try {
+    const { name } = req.body;
+    if (!name) return res.status(400).json({ success: false, error: 'name required' });
+    const [r] = await pool.query(
+      'INSERT INTO sector_stock_sections (subgroup_id, name) VALUES (?,?)',
+      [req.params.id, name]
+    );
+    res.json({ success: true, id: r.insertId });
+  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
+});
+
+app.put('/api/sectors/sections/:id', async (req, res) => {
+  try {
+    const { name } = req.body;
+    await pool.query('UPDATE sector_stock_sections SET name=? WHERE id=?', [name, req.params.id]);
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
+});
+
+app.delete('/api/sectors/sections/:id', async (req, res) => {
+  try {
+    // Nullify section_id for stocks in this section
+    await pool.query('UPDATE sector_stocks SET section_id=NULL WHERE section_id=?', [req.params.id]);
+    await pool.query('DELETE FROM sector_stock_sections WHERE id=?', [req.params.id]);
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
+});
+
+// Move stock to section (or unassign with section_id: null)
+app.put('/api/sectors/subgroups/:sid/stocks/:stockId/section', async (req, res) => {
+  try {
+    const { section_id } = req.body; // null = uncategorized
+    await pool.query(
+      'UPDATE sector_stocks SET section_id=? WHERE subgroup_id=? AND stock_id=?',
+      [section_id || null, req.params.sid, req.params.stockId]
+    );
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
 });
 
 // ============================================
@@ -598,6 +783,7 @@ app.get('/', (req, res) => {
         <div class="card">
           <h2>Quick Links</h2>
           <a href="/chart.html" class="button">📈 K 線圖</a>
+          <a href="/sectors.html" class="button">🗂 產業分類</a>
           <a href="/api/stocks/2330/latest" class="button">台積電最新</a>
           <a href="/api/stocks/2330/signals" class="button">台積電訊號</a>
           <a href="/api/stocks/2330/score" class="button">台積電評分</a>
@@ -609,6 +795,68 @@ app.get('/', (req, res) => {
     </body>
     </html>
   `);
+});
+
+// ============================================
+// AI 分析 API (streaming via SSE)
+// ============================================
+app.post('/api/ai/analyze', async (req, res) => {
+  const { stockId, stockName, context } = req.body;
+  if (!stockId) return res.status(400).json({ error: 'stockId required' });
+
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) {
+    return res.status(503).json({ error: 'ANTHROPIC_API_KEY 未設定，請在 .env 加入 API key' });
+  }
+
+  // SSE headers for streaming
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.flushHeaders();
+
+  try {
+    const client = new Anthropic({ apiKey });
+
+    const systemPrompt = `你是一位專業的台股技術分析師，熟悉台灣股市的特性、技術指標和籌碼面分析。
+請用繁體中文回覆，語言簡潔直接，重點清晰。分析時請關注：
+1. 技術指標的多空訊號（RSI、KD、MACD）
+2. 籌碼面（外資、投信、自營商動向）
+3. 當前股價位置與趨勢
+4. 短中期操作建議
+請避免過於保守的免責聲明，給出有參考價值的具體觀點。`;
+
+    const userMessage = `請分析 ${stockName || stockId}（${stockId}）的近期技術面與籌碼面狀況：
+
+${context || '（無額外資料）'}
+
+請給出：
+- 技術指標解讀（RSI/KD/MACD 目前狀態）
+- 籌碼面觀察
+- 短期多空偏向
+- 操作建議或需注意的關鍵位置`;
+
+    const stream = await client.messages.stream({
+      model: 'claude-opus-4-6',
+      max_tokens: 1024,
+      thinking: { type: 'adaptive' },
+      system: systemPrompt,
+      messages: [{ role: 'user', content: userMessage }],
+    });
+
+    for await (const event of stream) {
+      if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
+        res.write(`data: ${JSON.stringify({ text: event.delta.text })}\n\n`);
+      }
+    }
+
+    res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
+    res.end();
+  } catch (err) {
+    console.error('AI analyze error:', err.message);
+    res.write(`data: ${JSON.stringify({ error: err.message })}\n\n`);
+    res.end();
+  }
 });
 
 app.listen(PORT, () => {

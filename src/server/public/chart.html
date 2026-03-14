@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>台股分析</title>
   <script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/marked@9/marked.min.js"></script>
   <style>
     *, *::before, *::after { margin:0; padding:0; box-sizing:border-box; }
 
@@ -52,11 +53,11 @@
 
     /* ── Stock Header ── */
     .stock-header {
-      padding:16px 20px 12px;
+      padding:14px 20px 12px;
       border-bottom:1px solid var(--border);
       display:flex; align-items:flex-start; justify-content:space-between; flex-wrap:wrap; gap:12px;
     }
-    .header-left { display:flex; flex-direction:column; gap:6px; }
+    .header-left { display:flex; flex-direction:column; gap:5px; }
     .header-title { display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; }
     #stockName { font-size:22px; font-weight:700; }
     #stockCode { font-size:14px; color:var(--muted); }
@@ -66,18 +67,18 @@
       background:var(--bg3); border:1px solid var(--border); color:var(--muted);
     }
     .price-row { display:flex; align-items:baseline; gap:12px; flex-wrap:wrap; }
-    #closePrice { font-size:32px; font-weight:700; }
-    #changeBadge { font-size:15px; font-weight:600; padding:3px 10px; border-radius:6px; }
+    #closePrice { font-size:30px; font-weight:700; }
+    #changeBadge { font-size:14px; font-weight:600; padding:3px 10px; border-radius:6px; }
     #ohlcRow { font-size:13px; color:var(--muted); }
 
     .header-right { display:flex; gap:12px; align-items:center; }
-    .score-group { display:flex; gap:10px; }
+    .score-group { display:flex; gap:8px; }
     .score-badge {
       display:flex; flex-direction:column; align-items:center;
       background:var(--bg3); border:1px solid var(--border);
-      border-radius:var(--radius); padding:8px 14px; min-width:70px;
+      border-radius:var(--radius); padding:7px 12px; min-width:64px;
     }
-    .score-badge .score-val { font-size:22px; font-weight:700; }
+    .score-badge .score-val { font-size:20px; font-weight:700; }
     .score-badge .score-lbl { font-size:10px; color:var(--muted); margin-top:2px; }
 
     .up   { color:var(--red); }
@@ -86,6 +87,22 @@
     .up-bg   { background:rgba(248,81,73,.15); color:var(--red); }
     .down-bg { background:rgba(63,185,80,.15); color:var(--green); }
     .flat-bg { background:var(--bg3); color:var(--muted); }
+
+    /* ── Tab Nav ── */
+    .tab-nav {
+      display:flex; gap:4px; align-items:center;
+      padding:10px 20px; background:var(--bg2);
+      border-bottom:1px solid var(--border);
+    }
+    .tab-btn {
+      padding:6px 20px; border-radius:6px; border:1px solid var(--border);
+      background:transparent; color:var(--muted); cursor:pointer;
+      font-size:13px; font-weight:500; transition:all .15s; white-space:nowrap;
+      font-family:inherit;
+    }
+    .tab-btn:hover:not(.active) { background:var(--bg3); color:var(--text); }
+    .tab-btn.active { background:#1f6feb; border-color:#1f6feb; color:#fff; }
+    .tab-divider { width:1px; height:18px; background:var(--border); margin:0 6px; }
 
     /* ── Chart Controls ── */
     .chart-controls {
@@ -96,13 +113,57 @@
     .legend-bar { display:flex; gap:14px; font-size:12px; color:var(--muted); flex-wrap:wrap; }
     .ldot { display:inline-block; width:20px; height:3px; border-radius:2px; margin-right:4px; vertical-align:middle; }
 
+    /* ── Page body (charts + sidebar) ── */
+    .page-body { display:flex; align-items:flex-start; background:var(--bg); }
+    .charts-col { flex:1; min-width:0; }
+
+    /* ── Sidebar ── */
+    .sidebar {
+      width:900px; flex-shrink:0;
+      border-left:1px solid var(--border);
+      position:sticky; top:47px;
+      max-height:calc(100vh - 47px);
+      overflow-y:auto;
+    }
+    .sb-section { padding:12px 14px; border-bottom:1px solid var(--border); }
+    .sb-title {
+      font-size:10px; font-weight:700; color:var(--muted);
+      text-transform:uppercase; letter-spacing:.07em; margin-bottom:10px;
+    }
+    .sb-row { display:flex; justify-content:space-between; align-items:center; margin-bottom:5px; }
+    .sb-label { font-size:12px; color:var(--muted); }
+    .sb-val   { font-size:14px; font-weight:700; }
+    .sb-bar   { height:3px; border-radius:2px; background:var(--bg3); margin:3px 0 8px; overflow:hidden; }
+    .sb-bar-fill { height:100%; border-radius:2px; }
+    .sb-sig-list { display:flex; flex-direction:column; gap:5px; }
+    .sb-ai { font-size:12px; color:var(--text); line-height:1.65; overflow-y:auto; max-height:420px; }
+    .sb-ai p { margin:0 0 6px; }
+    .sb-ai strong, .sb-ai b { color:var(--yellow); }
+    .sb-ai ul, .sb-ai ol { padding-left:16px; margin:0 0 6px; }
+    .sb-ai li { margin-bottom:3px; }
+    .sb-ai h1,.sb-ai h2,.sb-ai h3 { font-size:12px; font-weight:700; color:var(--blue); margin:8px 0 4px; }
+    .sb-ai code { background:var(--bg3); padding:1px 4px; border-radius:3px; font-size:11px; }
+
     /* ── Charts ── */
-    .chart-block { padding:0 4px; background:var(--bg); }
-    #klineChart   { width:100%; height:440px; }
-    #volumeChart  { width:100%; height:110px; }
-    #rsiChart     { width:100%; height:100px; }
-    #macdChart    { width:100%; height:110px; }
-    #kdChart      { width:100%; height:100px; }
+    .kline-wrap { position:relative; }
+    .cross-toggle-btn {
+      position:absolute; top:8px; right:8px; z-index:10;
+      padding:3px 9px; font-size:11px; font-family:inherit;
+      border-radius:4px; border:1px solid var(--border);
+      background:var(--bg2); color:var(--muted); cursor:pointer;
+      transition:all .15s;
+    }
+    .cross-toggle-btn:hover:not(.active) { background:var(--bg3); color:var(--text); }
+    .cross-toggle-btn.active { background:rgba(63,185,80,.15); border-color:#3fb950; color:#3fb950; }
+    #klineChart  { width:100%; height:420px; }
+    #volumeChart { width:100%; height:90px; }
+    #rsiChart    { width:100%; height:130px; }
+    #kdChart     { width:100%; height:138px; }
+    #macdChart   { width:100%; height:138px; }
+    @media(max-width:800px){
+      .page-body  { flex-direction:column; }
+      .sidebar    { width:100%; position:static; max-height:none; border-left:none; border-top:1px solid var(--border); }
+    }
 
     /* ── Section ── */
     .section { padding:20px 20px 0; }
@@ -155,6 +216,18 @@
     .inst-card-detail { font-size:11px; color:var(--muted); margin-top:4px; }
     #instChart { width:100%; height:200px; }
 
+    /* ── Fundamental Panel ── */
+    .fund-loading {
+      display:flex; flex-direction:column; align-items:center; justify-content:center;
+      gap:12px; padding:60px 20px; color:var(--muted);
+    }
+    .fund-loading-spinner {
+      width:28px; height:28px; border:3px solid var(--border);
+      border-top-color:var(--blue); border-radius:50%;
+      animation:spin .8s linear infinite;
+    }
+    @keyframes spin { to { transform:rotate(360deg); } }
+
     /* ── Revenue ── */
     #revenueChart { width:100%; height:220px; }
     .rev-summary { display:flex; gap:20px; margin-bottom:12px; flex-wrap:wrap; }
@@ -191,16 +264,13 @@
     .val-card-value { font-size:22px; font-weight:700; }
     .val-card-sub   { font-size:11px; color:var(--muted); margin-top:4px; }
 
-    /* ── Divider ── */
-    .divider { height:1px; background:var(--border); margin:4px 0; }
-
     /* ── Loading / Error ── */
     #mainMsg { text-align:center; padding:60px 20px; color:var(--muted); font-size:15px; display:none; }
     .placeholder { color:var(--muted); font-size:13px; padding:20px 0; }
 
     @media(max-width:600px){
       .header-right { display:none; }
-      #klineChart { height:300px; }
+      #klineChart { height:260px; }
     }
   </style>
 </head>
@@ -209,6 +279,7 @@
 <!-- Topbar -->
 <div class="topbar">
   <a href="/">← 台股分析系統</a>
+  <a href="/sectors.html">🗂 產業分類</a>
   <div class="search-wrap">
     <input id="stockInput" type="text" placeholder="股票代號" value="2330" maxlength="6">
     <button class="btn" onclick="loadStock()">查詢</button>
@@ -236,97 +307,166 @@
   </div>
 </div>
 
-<!-- Chart Controls -->
-<div class="chart-controls">
-  <div class="period-bar">
-    <button class="btn" data-days="20"  onclick="setPeriod(this)">1M</button>
-    <button class="btn active" data-days="60"  onclick="setPeriod(this)">3M</button>
-    <button class="btn" data-days="120" onclick="setPeriod(this)">6M</button>
-    <button class="btn" data-days="240" onclick="setPeriod(this)">1Y</button>
-  </div>
-  <div class="legend-bar">
-    <span><span class="ldot" style="background:#e3b341"></span>MA5</span>
-    <span><span class="ldot" style="background:#f0a070"></span>MA10</span>
-    <span><span class="ldot" style="background:#58a6ff"></span>MA20</span>
-    <span><span class="ldot" style="background:#bc8cff"></span>MA60</span>
-    <span style="color:var(--border)">|</span>
-    <span><span class="ldot" style="background:#e3b341"></span>VMA5</span>
-    <span><span class="ldot" style="background:#58a6ff"></span>VMA20</span>
-  </div>
+<!-- Tab Nav -->
+<div class="tab-nav">
+  <button class="tab-btn active" data-tab="technical" onclick="switchTab('technical')">技術分析</button>
+  <div class="tab-divider"></div>
+  <button class="tab-btn" data-tab="fundamental" onclick="switchTab('fundamental')">基本面</button>
 </div>
 
-<!-- Charts -->
-<div id="mainMsg">載入中...</div>
-<div class="chart-block" id="chartBlock">
-  <div id="klineChart"></div>
-  <div id="volumeChart"></div>
-  <div id="rsiChart"></div>
-  <div id="kdChart"></div>
-  <div id="macdChart"></div>
+<!-- ════════════════════════════════════
+     技術分析 Panel
+════════════════════════════════════ -->
+<div id="panel-technical">
+
+  <!-- Chart Controls -->
+  <div class="chart-controls">
+    <div class="period-bar">
+      <button class="btn" data-months="1" onclick="setPeriod(this)">1M</button>
+      <button class="btn active" data-months="2" onclick="setPeriod(this)">2M</button>
+      <button class="btn" data-months="3" onclick="setPeriod(this)">3M</button>
+      <button class="btn" data-months="6" onclick="setPeriod(this)">6M</button>
+    </div>
+    <button class="btn" id="fibBtn" onclick="toggleFib(this)" title="斐波那契回撤線">Fib</button>
+    <div class="legend-bar">
+      <span><span class="ldot" style="background:#e3b341"></span>MA5</span>
+      <span><span class="ldot" style="background:#f0a070"></span>MA10</span>
+      <span><span class="ldot" style="background:#58a6ff"></span>MA20</span>
+      <span><span class="ldot" style="background:#bc8cff"></span>MA60</span>
+      <span style="color:var(--border)">|</span>
+      <span><span class="ldot" style="background:#e3b341"></span>VMA5</span>
+      <span><span class="ldot" style="background:#58a6ff"></span>VMA20</span>
+    </div>
+  </div>
+
+  <!-- Charts + Sidebar -->
+  <div id="mainMsg">載入中...</div>
+  <div class="page-body">
+    <!-- 左：圖表單欄 -->
+    <div class="charts-col" id="chartBlock">
+      <div class="kline-wrap">
+        <button id="crossBtn" class="cross-toggle-btn" onclick="toggleCrossSignals(this)" title="MA5/MA20 金叉死叉">金叉/死叉</button>
+        <div id="klineChart"></div>
+      </div>
+      <div id="volumeChart"></div>
+      <div id="rsiChart"></div>
+      <div id="kdChart"></div>
+      <div id="macdChart"></div>
+    </div>
+
+    <!-- 右：Sticky Sidebar -->
+    <div class="sidebar">
+      <!-- 指標摘要 -->
+      <div class="sb-section">
+        <div class="sb-title">指標摘要</div>
+        <div id="sbIndicators"><span style="color:var(--muted);font-size:12px">載入中...</span></div>
+      </div>
+      <!-- 交易訊號 -->
+      <div class="sb-section">
+        <div class="sb-title">交易訊號</div>
+        <div class="sb-sig-list" id="sbSignals"><span style="color:var(--muted);font-size:12px">載入中...</span></div>
+      </div>
+      <!-- AI 分析 -->
+      <div class="sb-section">
+        <div class="sb-title" style="display:flex;align-items:center;justify-content:space-between">
+          <span>AI 分析</span>
+          <button class="btn" id="aiAnalyzeBtn" onclick="runAIAnalysis()" style="font-size:11px;padding:3px 10px;border-radius:5px">▶ 分析</button>
+        </div>
+        <div class="sb-ai" id="sbAI" style="font-size:12px;line-height:1.6;color:var(--text);white-space:pre-wrap;min-height:60px">
+          <span style="color:var(--muted)">點擊「分析」讓 AI 解讀目前指標與籌碼</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Technical Indicators (detail) -->
+  <div class="section">
+    <div class="section-title">技術指標</div>
+    <div class="cards-grid" id="indicatorCards">
+      <div class="placeholder">載入中...</div>
+    </div>
+  </div>
+
+  <!-- Signals (detail) -->
+  <div class="section">
+    <div class="section-title">交易訊號</div>
+    <div class="signals-wrap" id="signalsWrap">
+      <span class="no-signal">載入中...</span>
+    </div>
+  </div>
+
+  <!-- Institutional -->
+  <div class="section">
+    <div class="section-title">三大法人（近20日）</div>
+    <div class="inst-cards" id="instCards">
+      <div class="placeholder">載入中...</div>
+    </div>
+    <div class="chart-block" style="padding:0;margin-bottom:20px">
+      <div id="instChart"></div>
+    </div>
+  </div>
+
+  <div style="height:40px"></div>
 </div>
 
-<!-- ───── Technical Indicators ───── -->
-<div class="section">
-  <div class="section-title">技術指標</div>
-  <div class="cards-grid" id="indicatorCards">
-    <div class="placeholder">載入中...</div>
-  </div>
-</div>
+<!-- ════════════════════════════════════
+     基本面 Panel（lazy load）
+════════════════════════════════════ -->
+<div id="panel-fundamental" style="display:none">
 
-<!-- ───── Signals ───── -->
-<div class="section">
-  <div class="section-title">交易訊號</div>
-  <div class="signals-wrap" id="signalsWrap">
-    <span class="no-signal">載入中...</span>
+  <!-- Valuation -->
+  <div class="section">
+    <div class="section-title">估值指標</div>
+    <div class="val-cards" id="valCards">
+      <div class="placeholder">—</div>
+    </div>
   </div>
-</div>
 
-<!-- ───── Institutional ───── -->
-<div class="section">
-  <div class="section-title">三大法人（近20日）</div>
-  <div class="inst-cards" id="instCards">
-    <div class="placeholder">載入中...</div>
+  <!-- Revenue -->
+  <div class="section">
+    <div class="section-title">月營收</div>
+    <div class="rev-summary" id="revSummary"></div>
+    <div class="chart-block" style="padding:0;margin-bottom:20px">
+      <div id="revenueChart"></div>
+    </div>
   </div>
-  <div class="chart-block" style="padding:0;margin-bottom:20px">
-    <div id="instChart"></div>
-  </div>
-</div>
 
-<!-- ───── Revenue ───── -->
-<div class="section">
-  <div class="section-title">月營收</div>
-  <div class="rev-summary" id="revSummary"></div>
-  <div class="chart-block" style="padding:0;margin-bottom:20px">
-    <div id="revenueChart"></div>
+  <!-- Financial -->
+  <div class="section">
+    <div class="section-title">財報摘要（近四季）</div>
+    <div class="fin-table-wrap" id="finTableWrap">
+      <div class="placeholder">—</div>
+    </div>
   </div>
-</div>
 
-<!-- ───── Financial & Valuation ───── -->
-<div class="section">
-  <div class="section-title">估值指標</div>
-  <div class="val-cards" id="valCards">
-    <div class="placeholder">載入中...</div>
-  </div>
+  <div style="height:40px"></div>
 </div>
-
-<div class="section">
-  <div class="section-title">財報摘要（近四季）</div>
-  <div class="fin-table-wrap" id="finTableWrap">
-    <div class="placeholder">載入中...</div>
-  </div>
-</div>
-<div style="height:40px"></div>
 
 <script>
 /* ══════════════════════════════
    State
 ══════════════════════════════ */
-let currentDays = 60;
+let currentMonths = 2;
 let currentStockId = new URLSearchParams(location.search).get('id') || '2330';
+let fundamentalLoaded = false;
+let revChart = null;
+let fibEnabled = false;
+let currentKlineData = null;
+let showCrossSignals = false;
+
+// 以當月為基準，往前推 N 個月，回傳當月第一天（用本地時間避免時區偏移）
+function getStartDate(months) {
+  const now = new Date();
+  const d = new Date(now.getFullYear(), now.getMonth() - (months - 1), 1);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  return `${y}-${m}-01`;
+}
+
 document.getElementById('stockInput').value = currentStockId;
 
 /* ══════════════════════════════
-   ECharts init
+   ECharts init（技術分析用）
 ══════════════════════════════ */
 const klineChart  = echarts.init(document.getElementById('klineChart'),  'dark');
 const volumeChart = echarts.init(document.getElementById('volumeChart'), 'dark');
@@ -334,12 +474,12 @@ const rsiChart    = echarts.init(document.getElementById('rsiChart'),    'dark')
 const kdChart     = echarts.init(document.getElementById('kdChart'),     'dark');
 const macdChart   = echarts.init(document.getElementById('macdChart'),   'dark');
 const instChart   = echarts.init(document.getElementById('instChart'),   'dark');
-const revChart    = echarts.init(document.getElementById('revenueChart'),'dark');
 
 echarts.connect([klineChart, volumeChart, rsiChart, kdChart, macdChart]);
 
 window.addEventListener('resize', () => {
-  [klineChart,volumeChart,rsiChart,kdChart,macdChart,instChart,revChart].forEach(c=>c.resize());
+  [klineChart, volumeChart, rsiChart, kdChart, macdChart, instChart].forEach(c => c.resize());
+  if (revChart) revChart.resize();
 });
 
 /* ══════════════════════════════
@@ -357,12 +497,37 @@ function calcVMA(vol, n) {
 const DARK_OPTS = { backgroundColor:'#0d1117' };
 
 /* ══════════════════════════════
+   Tab 切換
+══════════════════════════════ */
+function switchTab(tab) {
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.querySelector(`.tab-btn[data-tab="${tab}"]`).classList.add('active');
+
+  const istech = tab === 'technical';
+  document.getElementById('panel-technical').style.display  = istech ? '' : 'none';
+  document.getElementById('panel-fundamental').style.display = istech ? 'none' : '';
+
+  if (istech) {
+    // resize charts back after visibility restore
+    setTimeout(() => [klineChart,volumeChart,rsiChart,kdChart,macdChart,instChart].forEach(c=>c.resize()), 50);
+  } else {
+    // 第一次點擊才抓基本面資料
+    if (!fundamentalLoaded) {
+      fundamentalLoaded = true;
+      loadFundamentals();
+    } else if (revChart) {
+      setTimeout(() => revChart.resize(), 50);
+    }
+  }
+}
+
+/* ══════════════════════════════
    Period / Search
 ══════════════════════════════ */
 function setPeriod(btn) {
   document.querySelectorAll('.period-bar .btn').forEach(b=>b.classList.remove('active'));
   btn.classList.add('active');
-  currentDays = parseInt(btn.dataset.days);
+  currentMonths = parseInt(btn.dataset.months);
   loadCharts();
 }
 
@@ -370,22 +535,30 @@ function loadStock() {
   const v = document.getElementById('stockInput').value.trim();
   if (!v) return;
   currentStockId = v;
+  fundamentalLoaded = false;
+  currentMonths = 2; // 切換股票重置為預設期間
+  showCrossSignals = false;
+  document.getElementById('crossBtn')?.classList.remove('active');
+  document.querySelectorAll('.period-bar .btn').forEach((b,i)=>b.classList.toggle('active', i===1));
   history.replaceState(null,'',`?id=${v}`);
+  // 回到技術分析 tab
+  switchTab('technical');
   loadAll();
 }
 
 document.getElementById('stockInput').addEventListener('keydown', e => { if(e.key==='Enter') loadStock(); });
 
 /* ══════════════════════════════
-   Main Load
+   Main Load（技術分析）
 ══════════════════════════════ */
 async function loadAll() {
   showMsg('載入中...');
   try {
+    const startDate = getStartDate(currentMonths);
     const [infoRes, klineRes, indRes] = await Promise.all([
       fetch(`/api/stocks/${currentStockId}`),
-      fetch(`/api/stocks/${currentStockId}/kline?days=${currentDays}`),
-      fetch(`/api/stocks/${currentStockId}/indicators?days=${currentDays+30}`)
+      fetch(`/api/stocks/${currentStockId}/kline?startDate=${startDate}`),
+      fetch(`/api/stocks/${currentStockId}/indicators?startDate=${startDate}`)
     ]);
     const info  = await infoRes.json();
     const kline = await klineRes.json();
@@ -397,22 +570,19 @@ async function loadAll() {
     renderHeader(info.data, kline.data);
     renderCharts(kline.data, ind.data);
 
-    // 後續區塊非同步載入
     loadLatest();
     loadSignals();
     loadScore();
     loadInstitutional();
-    loadRevenue();
-    loadFinancial();
-    loadValuation();
   } catch(e) { showMsg('載入失敗：' + e.message); }
 }
 
 async function loadCharts() {
   try {
+    const startDate = getStartDate(currentMonths);
     const [klineRes, indRes] = await Promise.all([
-      fetch(`/api/stocks/${currentStockId}/kline?days=${currentDays}`),
-      fetch(`/api/stocks/${currentStockId}/indicators?days=${currentDays+30}`)
+      fetch(`/api/stocks/${currentStockId}/kline?startDate=${startDate}`),
+      fetch(`/api/stocks/${currentStockId}/indicators?startDate=${startDate}`)
     ]);
     const kline = await klineRes.json();
     const ind   = await indRes.json();
@@ -428,7 +598,6 @@ function renderHeader(info, kline) {
   const last  = ohlcv[ohlcv.length-1]; // [open,close,low,high]
   const close = last[1];
   const chgPct = parseFloat(kline.change_percent[kline.change_percent.length-1]);
-  const chgAmt = last[1]-last[0]; // approximation; overridden by actual later
   const isUp = chgPct >= 0;
 
   document.getElementById('stockName').textContent = info ? info.stock_name : currentStockId;
@@ -455,6 +624,17 @@ function renderHeader(info, kline) {
 /* ══════════════════════════════
    Charts
 ══════════════════════════════ */
+function buildCrossMarkPoints(dates, ohlcv, signals) {
+  return (signals || []).map(s=>{
+    const idx = dates.indexOf(s.date); if(idx===-1)return null;
+    const [o,c,low,high]=ohlcv[idx]; const isG=s.type==='golden_cross';
+    return { coord:[idx,isG?low:high], value:s.label, symbolOffset:[0,isG?'60%':'-60%'],
+      symbol:'arrow', symbolRotate:isG?0:180, symbolSize:14,
+      itemStyle:{color:isG?'#3fb950':'#f85149'},
+      label:{show:true,formatter:s.label,fontSize:10,color:'#fff',offset:isG?[0,14]:[0,-14]} };
+  }).filter(Boolean);
+}
+
 function renderCharts(kline, ind) {
   const d = kline;
   d.ohlcv          = d.ohlcv.map(r=>r.map(v=>v!=null?parseFloat(v):null));
@@ -465,15 +645,8 @@ function renderCharts(kline, ind) {
   d.ma20 = d.ma20.map(v=>v!=null?parseFloat(v):null);
   d.ma60 = d.ma60.map(v=>v!=null?parseFloat(v):null);
 
-  const signals = kline.signals || [];
-  const markPoints = signals.map(s=>{
-    const idx = d.dates.indexOf(s.date); if(idx===-1)return null;
-    const [o,c,low,high]=d.ohlcv[idx]; const isG=s.type==='golden_cross';
-    return { coord:[idx,isG?low:high], value:s.label, symbolOffset:[0,isG?'60%':'-60%'],
-      symbol:'arrow', symbolRotate:isG?0:180, symbolSize:14,
-      itemStyle:{color:isG?'#3fb950':'#f85149'},
-      label:{show:true,formatter:s.label,fontSize:10,color:'#fff',offset:isG?[0,14]:[0,-14]} };
-  }).filter(Boolean);
+  // 金叉/死叉預設隱藏；按鈕開啟後才顯示
+  const markPoints = [];
 
   const dataZoomShared = [
     { type:'inside', xAxisIndex:[0], start:0, end:100 },
@@ -531,7 +704,7 @@ function renderCharts(kline, ind) {
     ]
   }, true);
 
-  // --- RSI (from indicator history if available) ---
+  // --- RSI ---
   const indDates = ind?.dates || [];
   const rsiData  = alignSeries(d.dates, indDates, ind?.rsi || []);
   rsiChart.setOption({ ...DARK_OPTS, animation:false,
@@ -575,23 +748,20 @@ function renderCharts(kline, ind) {
   const sigData  = alignSeries(d.dates, indDates, ind?.macd_signal || []);
   const histData = alignSeries(d.dates, indDates, ind?.macd_histogram || []);
 
-  // Histogram 獨立 Y 軸，讓柱子佔滿垂直空間
   const histNonNull = histData.filter(v => v != null);
   const histMax = histNonNull.length ? Math.max(...histNonNull.map(Math.abs)) * 1.1 : 1;
 
   macdChart.setOption({ ...DARK_OPTS, animation:false,
-    grid:{left:60,right:16,top:22,bottom:48},
+    grid:{left:60,right:16,top:22,bottom:28},
     xAxis:{type:'category',data:d.dates,axisLine:{lineStyle:{color:'#30363d'}},
       axisLabel:{color:'#8b949e',fontSize:11,formatter:v=>v.slice(5)},splitLine:{show:false}},
     yAxis:[
-      // Y0：Histogram 專用（不顯示刻度，讓柱子填滿空間）
       { min:-histMax, max:histMax, show:false },
-      // Y1：MACD / Signal 線
       { scale:true, axisLabel:{color:'#8b949e',fontSize:10}, axisLine:{lineStyle:{color:'#30363d'}}, splitLine:{lineStyle:{color:'#21262d'}} }
     ],
     tooltip:{trigger:'axis',backgroundColor:'#161b22',borderColor:'#30363d',textStyle:{color:'#e6edf3',fontSize:12},
       formatter:p=>`${p[0].axisValue}<br/>MACD <b>${p.find(x=>x.seriesName==='MACD')?.value?.toFixed(2)||'—'}</b>　Signal <b>${p.find(x=>x.seriesName==='Signal')?.value?.toFixed(2)||'—'}</b>　Hist <b style="color:${(p.find(x=>x.seriesName==='Histogram')?.value??0)>=0?'#3fb950':'#f85149'}">${p.find(x=>x.seriesName==='Histogram')?.value?.toFixed(2)||'—'}</b>`},
-    dataZoom: dataZoomShared,
+    dataZoom: dataZoomLinked,
     legend:{data:['MACD','Signal','Histogram'],textStyle:{color:'#8b949e',fontSize:11},top:2,right:16},
     series:[
       { name:'Histogram', type:'bar', data:histData, yAxisIndex:0,
@@ -601,6 +771,55 @@ function renderCharts(kline, ind) {
       { name:'Signal', type:'line', data:sigData,  yAxisIndex:1, symbol:'none', lineStyle:{color:'#f0a070',width:1.5}, connectNulls:false },
     ]
   }, true);
+
+  // 存起來讓 Fib 可以用，並在 period 切換後重套
+  currentKlineData = d;
+  if (fibEnabled) updateFibLines();
+
+  // 更新 sidebar 指標摘要
+  updateSidebarIndicators(ind);
+}
+
+function updateSidebarIndicators(ind) {
+  const last = arr => arr ? [...arr].reverse().find(v => v != null) : null;
+  const rsi  = last(ind?.rsi);
+  const k    = last(ind?.kd_k);
+  const d    = last(ind?.kd_d);
+  const macd = last(ind?.macd);
+  const hist = last(ind?.macd_histogram);
+
+  const rsiColor = rsi >= 70 ? 'var(--red)' : rsi <= 30 ? 'var(--green)' : 'var(--text)';
+  const rsiLbl   = rsi >= 70 ? '超買' : rsi <= 30 ? '超賣' : '中性';
+  const histColor = hist >= 0 ? 'var(--green)' : 'var(--red)';
+  const kdColor  = k > d ? 'var(--orange)' : 'var(--purple)';
+  const kdLbl    = k > d ? 'K > D（偏多）' : 'K < D（偏空）';
+
+  document.getElementById('sbIndicators').innerHTML = `
+    <div class="sb-row">
+      <span class="sb-label">RSI(14)</span>
+      <span class="sb-val" style="color:${rsiColor}">${rsi != null ? rsi.toFixed(1) : '—'}</span>
+    </div>
+    <div style="font-size:10px;color:${rsiColor};margin:-2px 0 3px">${rsiLbl}</div>
+    <div class="sb-bar"><div class="sb-bar-fill" style="width:${Math.min(rsi??0,100)}%;background:${rsiColor}"></div></div>
+
+    <div class="sb-row">
+      <span class="sb-label">K</span>
+      <span class="sb-val" style="color:var(--orange)">${k != null ? k.toFixed(1) : '—'}</span>
+    </div>
+    <div class="sb-row" style="margin-bottom:3px">
+      <span class="sb-label">D</span>
+      <span class="sb-val" style="color:var(--purple)">${d != null ? d.toFixed(1) : '—'}</span>
+    </div>
+    <div style="font-size:10px;color:${kdColor};margin-bottom:8px">${kdLbl}</div>
+
+    <div class="sb-row">
+      <span class="sb-label">MACD</span>
+      <span class="sb-val" style="color:var(--blue)">${macd != null ? macd.toFixed(2) : '—'}</span>
+    </div>
+    <div class="sb-row">
+      <span class="sb-label">Histogram</span>
+      <span class="sb-val" style="color:${histColor}">${hist != null ? (hist >= 0 ? '+' : '') + hist.toFixed(2) : '—'}</span>
+    </div>`;
 }
 
 function alignSeries(targetDates, srcDates, srcVals) {
@@ -612,6 +831,80 @@ function alignSeries(targetDates, srcDates, srcVals) {
 function maL(name,data,color) {
   return { name, type:'line', data, smooth:false, symbol:'none',
     lineStyle:{color,width:1.5}, connectNulls:false };
+}
+
+/* ══════════════════════════════
+   Fibonacci Retracement
+══════════════════════════════ */
+const FIB_RATIOS = [
+  { r: 1,     color: '#8b949e', label: '100%', solid: false },
+  { r: 0.786, color: '#bc8cff', label: '78.6%', solid: false },
+  { r: 0.618, color: '#e3b341', label: '61.8%', solid: true  },  // 黃金比例
+  { r: 0.5,   color: '#8b949e', label: '50.0%', solid: false },
+  { r: 0.382, color: '#3fb950', label: '38.2%', solid: false },
+  { r: 0.236, color: '#58a6ff', label: '23.6%', solid: false },
+  { r: 0,     color: '#8b949e', label: '0%',    solid: false },
+];
+
+function toggleCrossSignals(btn) {
+  showCrossSignals = !showCrossSignals;
+  btn.classList.toggle('active', showCrossSignals);
+  if (!currentKlineData) return;
+  const pts = showCrossSignals
+    ? buildCrossMarkPoints(currentKlineData.dates, currentKlineData.ohlcv, currentKlineData.signals)
+    : [];
+  klineChart.setOption({ series: [{ markPoint: { data: pts } }] }, false);
+}
+
+function toggleFib(btn) {
+  fibEnabled = !fibEnabled;
+  btn.classList.toggle('active', fibEnabled);
+  updateFibLines();
+}
+
+function updateFibLines() {
+  if (!currentKlineData) return;
+
+  if (!fibEnabled) {
+    klineChart.setOption({ series: [{ markLine: { data: [] } }] }, false);
+    return;
+  }
+
+  // ohlcv 格式：[open, close, low, high]
+  const highs = currentKlineData.ohlcv.map(r => r[3]);
+  const lows  = currentKlineData.ohlcv.map(r => r[2]);
+  const high  = Math.max(...highs);
+  const low   = Math.min(...lows);
+  const diff  = high - low;
+
+  klineChart.setOption({
+    series: [{
+      markLine: {
+        silent: true, symbol: 'none', animation: false,
+        data: FIB_RATIOS.map(f => {
+          const price = low + diff * f.r;
+          return {
+            yAxis: price,
+            lineStyle: {
+              color: f.color,
+              type: f.solid ? 'solid' : 'dashed',
+              width: f.solid ? 1.5 : 1,
+              opacity: 0.75,
+            },
+            label: {
+              formatter: `${f.label}  ${price.toFixed(1)}`,
+              position: 'insideEndTop',
+              color: f.color,
+              fontSize: 11,
+              backgroundColor: 'rgba(13,17,23,0.75)',
+              padding: [2, 5],
+              borderRadius: 3,
+            }
+          };
+        })
+      }
+    }]
+  }, false); // false = merge，保留 markPoint 金叉死叉
 }
 
 /* ══════════════════════════════
@@ -701,14 +994,117 @@ async function loadSignals() {
     const j = await r.json();
     const wrap = document.getElementById('signalsWrap');
     if (!j.success || !j.signals || j.signals.length===0) {
-      wrap.innerHTML = '<span class="no-signal">目前無明顯交易訊號</span>'; return;
+      wrap.innerHTML = '<span class="no-signal">目前無明顯交易訊號</span>';
+      const sbSig = document.getElementById('sbSignals');
+      if (sbSig) sbSig.innerHTML = '<span style="color:var(--muted);font-size:12px">目前無訊號</span>';
+      return;
     }
     wrap.innerHTML = j.signals.map(s=>{
       const cls = s.type?.includes('golden')||s.type?.includes('oversold')||s.type?.includes('bull') ? 'bull'
                 : s.type?.includes('dead')||s.type?.includes('overbought') ? 'bear' : 'neutral';
       return `<span class="signal-tag ${cls}">${s.label||s.type}</span>`;
     }).join('');
+    // 同步更新 sidebar
+    const sbSig = document.getElementById('sbSignals');
+    if (sbSig) {
+      if (!j.success || !j.signals || j.signals.length === 0) {
+        sbSig.innerHTML = '<span style="color:var(--muted);font-size:12px">目前無訊號</span>';
+      } else {
+        sbSig.innerHTML = j.signals.map(s => {
+          const cls = s.type?.includes('golden')||s.type?.includes('oversold')||s.type?.includes('bull') ? 'bull'
+            : s.type?.includes('death')||s.type?.includes('overbought')||s.type?.includes('bear') ? 'bear' : 'neutral';
+          return `<span class="signal-tag ${cls}" style="font-size:11px;padding:3px 8px">${s.label||s.type}</span>`;
+        }).join('');
+      }
+    }
   } catch(e) {}
+}
+
+/* ══════════════════════════════
+   AI Analysis
+══════════════════════════════ */
+async function runAIAnalysis() {
+  const aiEl = document.getElementById('sbAI');
+  const btn  = document.getElementById('aiAnalyzeBtn');
+  if (!aiEl || !btn) return;
+
+  // Gather current context from sidebar indicators
+  const indEl = document.getElementById('sbIndicators');
+  const sigEl = document.getElementById('sbSignals');
+  const scoreEl = document.getElementById('scoreGroup');
+
+  let contextLines = [];
+
+  // Collect indicator values from sidebar text
+  if (indEl) contextLines.push('【技術指標】\n' + (indEl.innerText || '').trim());
+  if (sigEl) contextLines.push('【交易訊號】\n' + (sigEl.innerText || '').trim());
+  if (scoreEl) contextLines.push('【評分】\n' + (scoreEl.innerText || '').trim());
+
+  // Also grab inst cards if present
+  const instEl = document.getElementById('instCards');
+  if (instEl) contextLines.push('【法人籌碼（近20日）】\n' + (instEl.innerText || '').trim());
+
+  const context = contextLines.join('\n\n');
+  const stockName = document.getElementById('stockName')?.textContent || '';
+
+  // UI: loading state
+  btn.disabled = true;
+  btn.textContent = '分析中…';
+  aiEl.textContent = '';
+
+  // Use marked.js if available, else fallback to plain text
+  const renderMd = typeof marked !== 'undefined' ? (s => marked.parse(s)) : (s => s.replace(/</g,'&lt;'));
+
+  try {
+    const res = await fetch('/api/ai/analyze', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ stockId: currentStockId, stockName, context }),
+    });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      aiEl.textContent = '❌ ' + (err.error || res.statusText);
+      return;
+    }
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let fullText = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop(); // keep incomplete line
+
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        try {
+          const payload = JSON.parse(line.slice(6));
+          if (payload.error) { aiEl.textContent = '❌ ' + payload.error; return; }
+          if (payload.done) break;
+          if (payload.text) {
+            fullText += payload.text;
+            // Render markdown progressively
+            aiEl.innerHTML = renderMd(fullText);
+            aiEl.scrollTop = aiEl.scrollHeight;
+          }
+        } catch(_) {}
+      }
+    }
+
+    // Final render
+    if (fullText) aiEl.innerHTML = renderMd(fullText);
+    else if (!aiEl.textContent) aiEl.textContent = '（無回應）';
+  } catch(e) {
+    aiEl.textContent = '❌ ' + e.message;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '▶ 重新分析';
+  }
 }
 
 /* ══════════════════════════════
@@ -744,7 +1140,6 @@ async function loadInstitutional() {
       </div>`;
     }).join('');
 
-    // Daily chart
     if (daily.success && daily.data?.dates?.length) {
       const dd = daily.data;
       instChart.setOption({ ...DARK_OPTS, animation:false,
@@ -774,8 +1169,21 @@ async function loadInstitutional() {
 }
 
 /* ══════════════════════════════
-   Revenue
+   基本面（lazy load）
 ══════════════════════════════ */
+async function loadFundamentals() {
+  // 初始化 revChart（第一次才建立）
+  if (!revChart) {
+    revChart = echarts.init(document.getElementById('revenueChart'), 'dark');
+  }
+
+  await Promise.all([
+    loadValuation(),
+    loadRevenue(),
+    loadFinancial(),
+  ]);
+}
+
 async function loadRevenue() {
   try {
     const r = await fetch(`/api/stocks/${currentStockId}/revenue`);
@@ -799,7 +1207,7 @@ async function loadRevenue() {
       return;
     }
 
-    const labels = hist.map(h=>`${h.year}/${String(h.month).padStart(2,'0')}`);
+    const labels  = hist.map(h=>`${h.year}/${String(h.month).padStart(2,'0')}`);
     const revVals = hist.map(h=>parseFloat(h.revenue)||0);
     const yoyVals = hist.map(h=>h.revenue_yoy!=null?parseFloat(h.revenue_yoy):null);
 
@@ -829,9 +1237,6 @@ async function loadRevenue() {
   } catch(e) { document.getElementById('revSummary').textContent='載入失敗'; }
 }
 
-/* ══════════════════════════════
-   Financial
-══════════════════════════════ */
 async function loadFinancial() {
   const wrap = document.getElementById('finTableWrap');
   try {
@@ -842,12 +1247,10 @@ async function loadFinancial() {
 
     const pct = (a,b) => a&&b&&b!==0 ? (a/b*100).toFixed(1)+'%' : '—';
     const rows = stmts.slice(-4).reverse().map(s=>{
-      const grossM  = pct(s.gross_profit,  s.revenue);
-      const opM     = pct(s.operating_income, s.revenue);
-      const netM    = pct(s.net_income,     s.revenue);
-      const gVal = parseFloat(grossM);
-      const oVal = parseFloat(opM);
-      const nVal = parseFloat(netM);
+      const grossM = pct(s.gross_profit, s.revenue);
+      const opM    = pct(s.operating_income, s.revenue);
+      const netM   = pct(s.net_income, s.revenue);
+      const gVal = parseFloat(grossM), oVal = parseFloat(opM), nVal = parseFloat(netM);
       return `<tr>
         <td>${s.year} Q${s.quarter}</td>
         <td>${fmtM(s.revenue)}</td>
@@ -869,9 +1272,6 @@ async function loadFinancial() {
   } catch(e) { wrap.innerHTML='<div class="placeholder">載入失敗</div>'; }
 }
 
-/* ══════════════════════════════
-   Valuation
-══════════════════════════════ */
 async function loadValuation() {
   try {
     const r = await fetch(`/api/stocks/${currentStockId}/valuation`);

@@ -3,6 +3,81 @@ const { pool } = require('../database/connection');
 const { fetchFinMindData } = require('./finmindApi');
 
 /**
+ * 用 Yahoo Finance 抓取任意日期區間的股價（上市用 .TW，上櫃用 .TWO）
+ * @param {string} stockId - 股票代號
+ * @param {string} startDate - 開始日期 YYYY-MM-DD
+ * @param {string} endDate - 結束日期 YYYY-MM-DD
+ * @param {string} marketType - '上市' | '上櫃'
+ */
+async function fetchYahooPrice(stockId, startDate, endDate, marketType) {
+  const suffix = marketType === '上櫃' ? '.TWO' : '.TW';
+  const symbol = stockId + suffix;
+  const period1 = Math.floor(new Date(startDate).getTime() / 1000);
+  const period2 = Math.floor(new Date(endDate + 'T23:59:59').getTime() / 1000);
+
+  const response = await axios.get(
+    `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}`,
+    {
+      params: { interval: '1d', period1, period2 },
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'Accept': 'application/json',
+        'Referer': 'https://finance.yahoo.com',
+      },
+      timeout: 15000,
+    }
+  );
+
+  const result = response.data?.chart?.result?.[0];
+  if (!result?.timestamp?.length) return [];
+
+  const timestamps = result.timestamp;
+  const q = result.indicators.quote[0];
+
+  const records = [];
+  for (let i = 0; i < timestamps.length; i++) {
+    const close = q.close?.[i];
+    if (close == null) continue;
+
+    // 轉換為台灣日期（UTC+8）
+    const tradeDate = new Date((timestamps[i] + 8 * 3600) * 1000)
+      .toISOString().slice(0, 10);
+
+    const open  = q.open?.[i]   != null ? parseFloat(q.open[i].toFixed(2))  : null;
+    const high  = q.high?.[i]   != null ? parseFloat(q.high[i].toFixed(2))  : null;
+    const low   = q.low?.[i]    != null ? parseFloat(q.low[i].toFixed(2))   : null;
+    const closeParsed = parseFloat(close.toFixed(2));
+    const volume = q.volume?.[i] ?? null;
+
+    // 計算漲跌（與前一筆比較）
+    let changeAmount = null;
+    let changePercent = null;
+    if (records.length > 0) {
+      const prevClose = records[records.length - 1].close_price;
+      if (prevClose) {
+        changeAmount = parseFloat((closeParsed - prevClose).toFixed(2));
+        changePercent = parseFloat((changeAmount / prevClose * 100).toFixed(2));
+      }
+    }
+
+    records.push({
+      stock_id: stockId,
+      trade_date: tradeDate,
+      open_price: open,
+      high_price: high,
+      low_price: low,
+      close_price: closeParsed,
+      volume,
+      turnover: null,   // Yahoo 無成交金額
+      transactions: null,
+      change_amount: changeAmount,
+      change_percent: changePercent,
+    });
+  }
+  return records;
+}
+
+/**
  * 抓取指定股票的每日股價資料（TWSE 上市）
  * @param {string} stockId - 股票代號
  * @param {string} date - 日期 (YYYYMMDD 格式)
@@ -235,12 +310,13 @@ async function fetchRecentPrices() {
 async function fetchMultiMonthPrices(stockId, months = 1) {
   months = Math.min(Math.max(1, months), 12);
 
-  // 查 DB 最新資料日期，決定實際需要抓幾個月
-  const [latestRows] = await pool.query(
-    'SELECT MAX(trade_date) AS latest FROM daily_prices WHERE stock_id = ?',
-    [stockId]
-  );
-  const latestDate = latestRows[0].latest;
+  // 查 DB 最新資料日期與市場類型
+  const [[latestRow], [stockRow]] = await Promise.all([
+    pool.query('SELECT MAX(trade_date) AS latest FROM daily_prices WHERE stock_id = ?', [stockId]),
+    pool.query('SELECT market_type FROM stocks WHERE stock_id = ?', [stockId])
+  ]);
+  const latestDate = latestRow[0].latest;
+  const marketType = stockRow[0]?.market_type || '上市';
   const now = new Date();
   let monthsToFetch = months;
 
@@ -248,9 +324,6 @@ async function fetchMultiMonthPrices(stockId, months = 1) {
     const latest = new Date(latestDate);
     const gap = (now.getFullYear() - latest.getFullYear()) * 12
               + (now.getMonth() - latest.getMonth());
-    // gap=0 → 本月已有資料，僅更新本月最新交易日
-    // gap=1 → 上月有資料，只需抓本月
-    // gap≥2 → 多個月缺口
     monthsToFetch = Math.min(gap + 1, months);
     monthsToFetch = Math.max(monthsToFetch, 1);
     if (gap === 0) {
@@ -262,55 +335,35 @@ async function fetchMultiMonthPrices(stockId, months = 1) {
     console.log(`[${stockId}] 無歷史資料，抓取近 ${months} 個月`);
   }
 
-  console.log(`開始抓取 ${stockId} 近 ${monthsToFetch} 個月股價...`);
+  console.log(`開始抓取 ${stockId}（${marketType}）近 ${monthsToFetch} 個月股價...`);
+
+  const startD = new Date(now.getFullYear(), now.getMonth() - monthsToFetch + 1, 1);
+  const startDate = `${startD.getFullYear()}-${String(startD.getMonth() + 1).padStart(2, '0')}-01`;
+  const endDate = now.toISOString().slice(0, 10);
 
   const connection = await pool.getConnection();
   let totalRecords = 0;
 
   try {
-    for (let i = 0; i < monthsToFetch; i++) {
-      const targetDate = new Date(now.getFullYear(), now.getMonth() - i, 1);
-      const year = targetDate.getFullYear();
-      const month = String(targetDate.getMonth() + 1).padStart(2, '0');
-      const date = `${year}${month}01`;
-
-      console.log(`  抓取 ${year}/${month} ...`);
-      const records = await fetchDailyPrice(stockId, date);
-
-      if (records && records.length > 0) {
-        for (const record of records) {
-          await connection.query(
-            `INSERT INTO daily_prices
-            (stock_id, trade_date, open_price, high_price, low_price, close_price,
-             volume, turnover, transactions, change_amount, change_percent)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ON DUPLICATE KEY UPDATE
-            open_price = VALUES(open_price),
-            high_price = VALUES(high_price),
-            low_price = VALUES(low_price),
-            close_price = VALUES(close_price),
-            volume = VALUES(volume),
-            turnover = VALUES(turnover),
-            transactions = VALUES(transactions),
-            change_amount = VALUES(change_amount),
-            change_percent = VALUES(change_percent)`,
-            [
-              record.stock_id, record.trade_date, record.open_price,
-              record.high_price, record.low_price, record.close_price,
-              record.volume, record.turnover, record.transactions,
-              record.change_amount, record.change_percent
-            ]
-          );
-        }
-        totalRecords += records.length;
-        console.log(`  ✓ ${year}/${month} - ${records.length} 筆`);
+    const records = await fetchYahooPrice(stockId, startDate, endDate, marketType);
+    if (records && records.length > 0) {
+      await savePricesToDb(connection, records);
+      totalRecords = records.length;
+      console.log(`  ✓ Yahoo Finance ${records.length} 筆（${startDate} ~ ${endDate}）`);
+    } else {
+      console.log(`  ✗ Yahoo Finance 無資料，嘗試原始 API...`);
+      // 備援：上市用 TWSE，上櫃用 FinMind
+      if (marketType === '上櫃') {
+        const r = await fetchOTCDailyPrice(stockId, startDate);
+        if (r?.length) { await savePricesToDb(connection, r); totalRecords = r.length; }
       } else {
-        console.log(`  ✗ ${year}/${month} - 無資料`);
-      }
-
-      // 每月之間加 3 秒延遲避免被 TWSE 封鎖
-      if (i < monthsToFetch - 1) {
-        await new Promise(resolve => setTimeout(resolve, 3000));
+        for (let i = 0; i < monthsToFetch; i++) {
+          const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+          const dateStr = `${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}01`;
+          const r = await fetchDailyPrice(stockId, dateStr);
+          if (r?.length) { await savePricesToDb(connection, r); totalRecords += r.length; }
+          if (i < monthsToFetch - 1) await new Promise(res => setTimeout(res, 1200));
+        }
       }
     }
 
@@ -550,78 +603,74 @@ async function syncAllStocksHistory(months = 6, onProgress = null) {
   months = Math.min(Math.max(1, months), 12);
   const now = new Date();
 
-  // 上市月份清單
-  const monthList = [];
-  for (let i = 0; i < months; i++) {
-    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-    monthList.push({
-      yearMonth: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`,
-      dateStr:   `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}01`,
-      isCurrent: i === 0
-    });
-  }
-
-  // 查詢 DB 中已有哪些 (stock_id, year_month) 組合（用於上市跳過判斷）
-  const [existing] = await pool.query(
-    `SELECT stock_id, DATE_FORMAT(trade_date, '%Y-%m') AS ym
-     FROM daily_prices
-     WHERE trade_date >= DATE_SUB(CURDATE(), INTERVAL ? MONTH)
-     GROUP BY stock_id, ym`,
-    [months + 1]
-  );
-  const existingSet = new Set(existing.map(r => `${r.stock_id}:${r.ym}`));
-
-  // 上櫃 start_date：N 個月前的 1 號
   const startD = new Date(now.getFullYear(), now.getMonth() - months + 1, 1);
-  const otcStartDate = `${startD.getFullYear()}-${String(startD.getMonth() + 1).padStart(2, '0')}-01`;
+  const startDate = `${startD.getFullYear()}-${String(startD.getMonth() + 1).padStart(2, '0')}-01`;
+  const endDate = now.toISOString().slice(0, 10);
 
-  // 取得全部股票（含 market_type）
-  const [stocks] = await pool.query(
-    'SELECT stock_id, market_type FROM stocks WHERE is_active = TRUE ORDER BY stock_id'
+  // 查詢哪些股票在該區間有缺口（latest_date < endDate 或完全無資料）
+  const [stockRows] = await pool.query(
+    `SELECT s.stock_id, s.market_type,
+            MAX(dp.trade_date) AS latest_date
+     FROM stocks s
+     LEFT JOIN daily_prices dp
+       ON s.stock_id = dp.stock_id
+       AND dp.trade_date >= ?
+     WHERE s.is_active = TRUE
+     GROUP BY s.stock_id, s.market_type
+     HAVING latest_date IS NULL OR latest_date < ?
+     ORDER BY s.stock_id`,
+    [startDate, endDate]
   );
+
+  console.log(`需要補抓的股票：${stockRows.length} 支（${startDate} ~ ${endDate}）`);
 
   const connection = await pool.getConnection();
   let totalRecords = 0;
-  let stocksDone  = 0;
+  let stocksDone = 0;
+  let yahooFails = 0;
 
   try {
-    for (const { stock_id, market_type } of stocks) {
-      if (market_type === '上櫃') {
-        // 上櫃：一次 FinMind API 呼叫取全部月份
-        const records = await fetchOTCDailyPrice(stock_id, otcStartDate);
-        if (records && records.length > 0) {
-          await savePricesToDb(connection, records);
-          totalRecords += records.length;
-        }
-        // FinMind 有 rate limit，稍微等一下
-        await new Promise(resolve => setTimeout(resolve, 500));
-      } else {
-        // 上市：按月呼叫 TWSE API
-        for (const { yearMonth, dateStr, isCurrent } of monthList) {
-          const key = `${stock_id}:${yearMonth}`;
-          if (!isCurrent && existingSet.has(key)) continue;
+    for (const { stock_id, market_type, latest_date } of stockRows) {
+      // 若已有部分資料，從最新日期的次日開始補
+      const fetchStart = latest_date
+        ? new Date(new Date(latest_date).getTime() + 86400000).toISOString().slice(0, 10)
+        : startDate;
 
-          const records = await fetchDailyPrice(stock_id, dateStr);
-          if (records && records.length > 0) {
-            await savePricesToDb(connection, records);
-            totalRecords += records.length;
+      let records = null;
+      try {
+        records = await fetchYahooPrice(stock_id, fetchStart, endDate, market_type);
+      } catch (e) {
+        yahooFails++;
+      }
+
+      if (records && records.length > 0) {
+        await savePricesToDb(connection, records);
+        totalRecords += records.length;
+      } else if (!records) {
+        // Yahoo 失敗：備援
+        try {
+          if (market_type === '上櫃') {
+            const r = await fetchOTCDailyPrice(stock_id, fetchStart);
+            if (r?.length) { await savePricesToDb(connection, r); totalRecords += r.length; }
+          } else {
+            const dateStr = fetchStart.replace(/-/g, '').slice(0, 6) + '01';
+            const r = await fetchDailyPrice(stock_id, dateStr);
+            if (r?.length) { await savePricesToDb(connection, r); totalRecords += r.length; }
           }
-          await new Promise(resolve => setTimeout(resolve, 1200));
-        }
+        } catch (_) {}
       }
 
       stocksDone++;
-      if (onProgress) onProgress(stocksDone, stocks.length, stock_id);
+      if (onProgress) onProgress(stocksDone, stockRows.length, stock_id);
 
-      // 每 20 檔多等 2 秒
-      if (stocksDone % 20 === 0) {
-        await new Promise(resolve => setTimeout(resolve, 2000));
-      }
+      // Yahoo Finance 較寬鬆，300ms 即可
+      await new Promise(resolve => setTimeout(resolve, 300));
     }
   } finally {
     connection.release();
   }
 
+  console.log(`完成！補抓 ${stocksDone} 支，共 ${totalRecords} 筆，Yahoo 失敗 ${yahooFails} 支`);
   return { stocks: stocksDone, records: totalRecords };
 }
 
@@ -641,6 +690,7 @@ if (require.main === module) {
 module.exports = {
   fetchDailyPrice,
   fetchOTCDailyPrice,
+  fetchYahooPrice,
   fetchBatchDailyPrices,
   fetchRecentPrices,
   fetchMultiMonthPrices,

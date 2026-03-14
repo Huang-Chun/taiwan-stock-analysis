@@ -540,28 +540,10 @@ server.tool(
     try {
       let count;
       if (year && month) {
-        const { fetchMonthlyRevenue } = require('../crawler/fetchMonthlyRevenue');
-        if (stock_id) {
-          // 單檔模式：直接呼叫底層函式帶 stockId
-          const records = await fetchMonthlyRevenue(year, month, stock_id);
-          if (records.length === 0) return { content: [{ type: 'text', text: `${stock_id} 在 ${year}/${month} 無月營收資料` }] };
-          // 存入 DB（複用 fetchAndSaveMonthlyRevenue 的邏輯太耦合，直接存）
-          const { pool } = require('../database/connection');
-          const connection = await pool.getConnection();
-          try {
-            for (const r of records) {
-              await connection.query(
-                `INSERT INTO monthly_revenue (stock_id, year, month, revenue) VALUES (?, ?, ?, ?)
-                 ON DUPLICATE KEY UPDATE revenue = VALUES(revenue)`,
-                [r.stock_id, r.year, r.month, r.revenue]
-              );
-            }
-            count = records.length;
-          } finally { connection.release(); }
-        } else {
-          count = await fetchAndSaveMonthlyRevenue(year, month);
-        }
+        // 指定年月：直接呼叫 fetchAndSaveMonthlyRevenue（含增率計算）
+        count = await fetchAndSaveMonthlyRevenue(year, month, stock_id);
       } else {
+        // 不指定年月：自動偵測缺口並循序補抓
         count = await fetchRecentMonthlyRevenue(stock_id);
       }
       return { content: [{ type: 'text', text: `成功同步 ${count} 筆月營收資料` }] };

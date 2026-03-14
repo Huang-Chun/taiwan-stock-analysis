@@ -234,32 +234,118 @@ async function fetchAndSaveMonthlyRevenue(year, month, stockId) {
 }
 
 /**
- * 抓取最近月份的月營收
- * 先查 DB 是否已有該月資料，有則跳過
- * @param {string} [stockId] - 指定股票代號（可選）
+ * 計算兩個 [year, month] 之間相差幾個月
  */
-async function fetchRecentMonthlyRevenue(stockId) {
-  // 月營收通常在次月 10 號後公佈，抓前一個月
+function monthDiff(fromYear, fromMonth, toYear, toMonth) {
+  return (toYear - fromYear) * 12 + (toMonth - fromMonth);
+}
+
+/**
+ * 從 [year, month] 往前推 n 個月，回傳 [year, month]
+ */
+function subtractMonths(year, month, n) {
+  let m = month - n;
+  let y = year + Math.floor((m - 1) / 12);
+  m = ((m - 1) % 12 + 12) % 12 + 1;
+  return [y, m];
+}
+
+/**
+ * 抓取月營收，自動偵測歷史缺口並循序補抓
+ *
+ * - 指定 stockId：查 DB 最新月份，自動補到最新（最多 backfillMonths 個月）
+ * - 不指定 stockId（全市場）：只抓最近一個月（維持原行為，避免過慢）
+ *
+ * @param {string} [stockId] - 指定股票代號（可選）
+ * @param {number} [backfillMonths=14] - 最多往回補幾個月（預設 14 個月）
+ */
+async function fetchRecentMonthlyRevenue(stockId, backfillMonths = 14) {
+  // 目標月份：上個月（月營收在次月公佈）
   const now = new Date();
-  let year = now.getFullYear();
-  let month = now.getMonth(); // 0-based, 所以就是上個月
-  if (month === 0) {
-    year -= 1;
-    month = 12;
-  }
+  let targetYear = now.getFullYear();
+  let targetMonth = now.getMonth(); // 0-based = 上個月
+  if (targetMonth === 0) { targetYear -= 1; targetMonth = 12; }
 
-  // 查 DB 是否已有該月資料
-  const checkQuery = stockId
-    ? 'SELECT COUNT(*) AS cnt FROM monthly_revenue WHERE year = ? AND month = ? AND stock_id = ?'
-    : 'SELECT COUNT(*) AS cnt FROM monthly_revenue WHERE year = ? AND month = ?';
-  const checkParams = stockId ? [year, month, stockId] : [year, month];
-  const [rows] = await pool.query(checkQuery, checkParams);
-  if (rows[0].cnt > 0) {
-    console.log(`${year}/${month} 月營收已存在，跳過`);
-    return 0;
-  }
+  if (stockId) {
+    // --- 單股模式：自動偵測缺口，循序補抓 ---
+    const [rows] = await pool.query(
+      'SELECT MAX(year * 100 + month) AS latest FROM monthly_revenue WHERE stock_id = ?',
+      [stockId]
+    );
+    const latestCode = rows[0].latest; // e.g. 202501
+    const targetCode = targetYear * 100 + targetMonth;
 
-  return await fetchAndSaveMonthlyRevenue(year, month, stockId);
+    if (latestCode && latestCode >= targetCode) {
+      console.log(`${stockId} 月營收已是最新（${Math.floor(latestCode / 100)}/${latestCode % 100}），跳過`);
+      return 0;
+    }
+
+    // 建立需要補抓的月份清單（由舊到新，確保 MoM 計算正確）
+    let startYear, startMonth;
+    if (!latestCode) {
+      // 從未有資料，往回抓 backfillMonths 個月
+      [startYear, startMonth] = subtractMonths(targetYear, targetMonth, backfillMonths - 1);
+    } else {
+      // 從最新月份的下一個月開始補
+      startMonth = (latestCode % 100) + 1;
+      startYear = Math.floor(latestCode / 100);
+      if (startMonth > 12) { startYear += 1; startMonth = 1; }
+    }
+
+    const gap = monthDiff(startYear, startMonth, targetYear, targetMonth) + 1;
+    if (gap <= 0) return 0;
+
+    console.log(`${stockId} 月營收缺口 ${gap} 個月（${startYear}/${startMonth} ~ ${targetYear}/${targetMonth}），循序補抓...`);
+
+    let total = 0;
+    let y = startYear, m = startMonth;
+    for (let i = 0; i < gap; i++) {
+      total += await fetchAndSaveMonthlyRevenue(y, m, stockId);
+      m++;
+      if (m > 12) { y++; m = 1; }
+    }
+    return total;
+
+  } else {
+    // --- 全市場模式：偵測缺口，循序補抓 ---
+    // 以「有 200 支以上股票」視為完整月份，找最近一次完整月份
+    const [coverageRows] = await pool.query(
+      `SELECT year, month FROM monthly_revenue
+       GROUP BY year, month HAVING COUNT(DISTINCT stock_id) >= 200
+       ORDER BY year DESC, month DESC LIMIT 1`
+    );
+
+    let startYear, startMonth;
+    if (coverageRows.length === 0) {
+      // 從未做過全市場，往回補 backfillMonths 個月
+      [startYear, startMonth] = subtractMonths(targetYear, targetMonth, backfillMonths - 1);
+    } else {
+      // 從最後一次完整月份的下一個月開始
+      startMonth = coverageRows[0].month + 1;
+      startYear  = coverageRows[0].year;
+      if (startMonth > 12) { startYear += 1; startMonth = 1; }
+    }
+
+    const targetCode = targetYear * 100 + targetMonth;
+    const startCode  = startYear  * 100 + startMonth;
+
+    if (startCode > targetCode) {
+      console.log(`全市場月營收已是最新（${targetYear}/${targetMonth}），跳過`);
+      return 0;
+    }
+
+    const gap = monthDiff(startYear, startMonth, targetYear, targetMonth) + 1;
+    console.log(`全市場月營收缺口 ${gap} 個月（${startYear}/${startMonth} ~ ${targetYear}/${targetMonth}），循序補抓...`);
+
+    let total = 0;
+    let y = startYear, m = startMonth;
+    for (let i = 0; i < gap; i++) {
+      total += await fetchAndSaveMonthlyRevenue(y, m);
+      m++;
+      if (m > 12) { y++; m = 1; }
+    }
+    return total;
+  }
 }
 
 if (require.main === module) {
