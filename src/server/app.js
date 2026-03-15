@@ -859,6 +859,280 @@ ${context || '（無額外資料）'}
   }
 });
 
+// ============================================
+// AI Chat API (multi-turn + tool use + SSE streaming)
+// ============================================
+app.post('/api/chat', async (req, res) => {
+  const { messages = [], context = {} } = req.body;
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) return res.status(503).json({ error: 'ANTHROPIC_API_KEY 未設定' });
+
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.flushHeaders();
+
+  const emit = (data) => res.write(`data: ${JSON.stringify(data)}\n\n`);
+
+  // ── Tool definitions ──────────────────────────────────────────
+  const tools = [
+    {
+      name: 'get_stock_latest',
+      description: '取得股票最新報價與技術指標（RSI、KD、MACD、MA等）',
+      input_schema: {
+        type: 'object',
+        properties: { stock_id: { type: 'string', description: '股票代號，如 2330' } },
+        required: ['stock_id'],
+      },
+    },
+    {
+      name: 'get_signals',
+      description: '偵測股票的技術面交易訊號（黃金交叉、RSI超賣、MACD訊號等）',
+      input_schema: {
+        type: 'object',
+        properties: { stock_id: { type: 'string' } },
+        required: ['stock_id'],
+      },
+    },
+    {
+      name: 'get_score',
+      description: '取得股票技術面 + 基本面綜合評分（0-100）',
+      input_schema: {
+        type: 'object',
+        properties: { stock_id: { type: 'string' } },
+        required: ['stock_id'],
+      },
+    },
+    {
+      name: 'get_institutional',
+      description: '取得法人買賣超資料（外資、投信、自營商）',
+      input_schema: {
+        type: 'object',
+        properties: {
+          stock_id: { type: 'string' },
+          days: { type: 'number', description: '查詢天數，預設 20' },
+        },
+        required: ['stock_id'],
+      },
+    },
+    {
+      name: 'get_margin',
+      description: '取得融資融券資料與趨勢分析',
+      input_schema: {
+        type: 'object',
+        properties: { stock_id: { type: 'string' } },
+        required: ['stock_id'],
+      },
+    },
+    {
+      name: 'get_revenue',
+      description: '取得月營收趨勢與年月增率',
+      input_schema: {
+        type: 'object',
+        properties: { stock_id: { type: 'string' } },
+        required: ['stock_id'],
+      },
+    },
+    {
+      name: 'get_financial',
+      description: '取得財報摘要（EPS、毛利率、ROE、負債比等）',
+      input_schema: {
+        type: 'object',
+        properties: { stock_id: { type: 'string' } },
+        required: ['stock_id'],
+      },
+    },
+    {
+      name: 'get_valuation',
+      description: '取得估值指標（本益比 PE、股價淨值比 PB、殖利率）',
+      input_schema: {
+        type: 'object',
+        properties: { stock_id: { type: 'string' } },
+        required: ['stock_id'],
+      },
+    },
+    {
+      name: 'screen_stocks',
+      description: '用策略或技術條件篩選股票',
+      input_schema: {
+        type: 'object',
+        properties: {
+          strategy: { type: 'string', description: '策略：golden_cross, rsi_oversold, macd_golden_cross, volume_breakout, bollinger_squeeze' },
+          rsi_min: { type: 'number' },
+          rsi_max: { type: 'number' },
+          ma_position: { type: 'string', description: 'above 或 below（相對 MA20）' },
+          macd_positive: { type: 'boolean' },
+          kd_golden_cross: { type: 'boolean' },
+        },
+      },
+    },
+  ];
+
+  // ── Tool executor ─────────────────────────────────────────────
+  const executeTool = async (name, input) => {
+    switch (name) {
+      case 'get_stock_latest': {
+        const [rows] = await pool.query(
+          `SELECT s.stock_id, s.stock_name, s.industry, s.market_type,
+              dp.trade_date, dp.close_price, dp.open_price, dp.high_price,
+              dp.low_price, dp.volume, dp.change_amount, dp.change_percent,
+              ti.ma5, ti.ma10, ti.ma20, ti.ma60, ti.rsi,
+              ti.macd, ti.macd_signal, ti.macd_histogram,
+              ti.kd_k, ti.kd_d, ti.bollinger_upper, ti.bollinger_lower, ti.adx
+           FROM stocks s
+           LEFT JOIN daily_prices dp ON s.stock_id = dp.stock_id
+           LEFT JOIN technical_indicators ti ON s.stock_id = ti.stock_id
+             AND dp.trade_date = ti.trade_date
+           WHERE s.stock_id = ?
+           ORDER BY dp.trade_date DESC LIMIT 1`,
+          [input.stock_id]
+        );
+        return rows[0] || { error: '找不到股票' };
+      }
+      case 'get_signals':
+        return await detectAllSignals(input.stock_id);
+      case 'get_score': {
+        const technical = await scoreStock(input.stock_id);
+        const fundamental = await scoreFundamental(input.stock_id);
+        let totalScore = null;
+        if (technical && fundamental) totalScore = Math.round(technical.score * 0.5 + fundamental.score * 0.5);
+        else if (technical) totalScore = technical.score;
+        else if (fundamental) totalScore = fundamental.score;
+        return {
+          total_score: totalScore,
+          technical_score: technical?.score,
+          fundamental_score: fundamental?.score,
+          technical_details: technical?.indicators,
+          fundamental_details: fundamental?.details,
+        };
+      }
+      case 'get_institutional':
+        return await analyzeInstitutionalTrend(input.stock_id, input.days || 20);
+      case 'get_margin':
+        return await analyzeMarginTrend(input.stock_id);
+      case 'get_revenue':
+        return await analyzeRevenueTrend(input.stock_id);
+      case 'get_financial':
+        return await getFinancialSummary(input.stock_id);
+      case 'get_valuation':
+        return await calculateValuation(input.stock_id);
+      case 'screen_stocks': {
+        if (input.strategy) {
+          return await screenByStrategy(input.strategy, { rsi_threshold: input.rsi_max || 30 });
+        }
+        let query = `
+          SELECT s.stock_id, s.stock_name, dp.close_price, dp.change_percent,
+                 ti.rsi, ti.kd_k, ti.kd_d, ti.macd_histogram, ti.ma20
+          FROM stocks s
+          JOIN daily_prices dp ON s.stock_id = dp.stock_id
+          JOIN technical_indicators ti ON s.stock_id = ti.stock_id
+            AND dp.trade_date = ti.trade_date
+          WHERE dp.trade_date = (SELECT MAX(trade_date) FROM daily_prices WHERE stock_id = s.stock_id)
+        `;
+        const params = [];
+        if (input.rsi_min != null) { query += ' AND ti.rsi >= ?'; params.push(input.rsi_min); }
+        if (input.rsi_max != null) { query += ' AND ti.rsi <= ?'; params.push(input.rsi_max); }
+        if (input.ma_position === 'above') query += ' AND dp.close_price > ti.ma20';
+        else if (input.ma_position === 'below') query += ' AND dp.close_price < ti.ma20';
+        if (input.macd_positive) query += ' AND ti.macd_histogram > 0';
+        if (input.kd_golden_cross) query += ' AND ti.kd_k > ti.kd_d';
+        query += ' ORDER BY dp.change_percent DESC LIMIT 30';
+        const [rows] = await pool.query(query, params);
+        return { data: rows, count: rows.length };
+      }
+      default:
+        return { error: `Unknown tool: ${name}` };
+    }
+  };
+
+  // ── System prompt ─────────────────────────────────────────────
+  const contextDesc = context.stockId
+    ? `使用者目前正在查看 ${context.stockName || context.stockId}（${context.stockId}），頁面：${context.page || '台股分析'}。`
+    : `使用者目前在頁面：${context.page || '台股分析'}。`;
+
+  const systemPrompt = `你是一位專業的台股分析師助理，整合在台股分析系統中。
+${contextDesc}
+你有工具可以查詢即時股票資料（技術指標、籌碼、財報、月營收、估值、股票篩選等）。
+遇到需要數據的問題，主動使用工具查詢，不要只靠記憶回答。
+回覆用繁體中文，語言直接精準，重點清晰。給出有參考價值的具體觀點，避免空洞的免責聲明。`;
+
+  // ── Agentic loop ──────────────────────────────────────────────
+  try {
+    const client = new Anthropic({ apiKey });
+    let currentMessages = messages.map(m => ({ role: m.role, content: m.content }));
+
+    for (let iteration = 0; iteration < 6; iteration++) {
+      const stream = client.messages.stream({
+        model: 'claude-sonnet-4-6',
+        max_tokens: 2048,
+        system: systemPrompt,
+        tools,
+        messages: currentMessages,
+      });
+
+      let toolUses = [];
+      let currentToolUse = null;
+      let assistantContent = [];
+
+      for await (const event of stream) {
+        if (event.type === 'content_block_start') {
+          if (event.content_block.type === 'text') {
+            assistantContent.push({ type: 'text', text: '' });
+          } else if (event.content_block.type === 'tool_use') {
+            currentToolUse = { id: event.content_block.id, name: event.content_block.name, input_json: '' };
+            assistantContent.push({ type: 'tool_use', id: event.content_block.id, name: event.content_block.name, input: null });
+          }
+        }
+        if (event.type === 'content_block_delta') {
+          if (event.delta.type === 'text_delta') {
+            const last = assistantContent[assistantContent.length - 1];
+            if (last?.type === 'text') last.text += event.delta.text;
+            emit({ text: event.delta.text });
+          }
+          if (event.delta.type === 'input_json_delta' && currentToolUse) {
+            currentToolUse.input_json += event.delta.partial_json;
+          }
+        }
+        if (event.type === 'content_block_stop' && currentToolUse) {
+          try { currentToolUse.input = JSON.parse(currentToolUse.input_json || '{}'); } catch { currentToolUse.input = {}; }
+          toolUses.push(currentToolUse);
+          const last = assistantContent[assistantContent.length - 1];
+          if (last?.type === 'tool_use') last.input = currentToolUse.input;
+          currentToolUse = null;
+        }
+      }
+
+      const finalMsg = await stream.finalMessage();
+
+      if (finalMsg.stop_reason === 'end_turn' || toolUses.length === 0) {
+        emit({ done: true });
+        break;
+      }
+
+      // tool_use: add assistant turn, then execute tools
+      currentMessages.push({ role: 'assistant', content: assistantContent });
+
+      const toolResults = [];
+      for (const tu of toolUses) {
+        emit({ tool_call: { name: tu.name, input: tu.input } });
+        try {
+          const result = await executeTool(tu.name, tu.input);
+          toolResults.push({ type: 'tool_result', tool_use_id: tu.id, content: JSON.stringify(result) });
+        } catch (err) {
+          toolResults.push({ type: 'tool_result', tool_use_id: tu.id, content: `Error: ${err.message}`, is_error: true });
+        }
+      }
+      currentMessages.push({ role: 'user', content: toolResults });
+    }
+
+    res.end();
+  } catch (err) {
+    console.error('Chat error:', err.message);
+    emit({ error: err.message });
+    res.end();
+  }
+});
+
 app.listen(PORT, () => {
   console.log(`\n台股分析系統 v2.0 啟動成功！`);
   console.log(`網址: http://localhost:${PORT}`);
