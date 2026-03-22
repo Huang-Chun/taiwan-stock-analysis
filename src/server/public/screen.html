@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>策略篩選 - 台股分析</title>
+<style>
+:root {
+  --bg: #0d1117; --bg2: #161b22; --bg3: #21262d;
+  --border: #30363d; --text: #e6edf3; --muted: #8b949e;
+  --green: #3fb950; --red: #f85149; --yellow: #e3b341;
+  --blue: #58a6ff; --purple: #bc8cff; --orange: #f0a070;
+  --radius: 8px;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; font-size: 14px; }
+
+/* ── Nav ── */
+.nav { display: flex; align-items: center; gap: 16px; padding: 10px 20px; background: var(--bg2); border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 100; }
+.nav-brand { font-weight: 700; font-size: 15px; color: var(--blue); text-decoration: none; }
+.nav a { color: var(--muted); text-decoration: none; font-size: 13px; }
+.nav a:hover, .nav a.active { color: var(--text); }
+
+/* ── Layout ── */
+.page { max-width: 1400px; margin: 0 auto; padding: 20px; }
+.page-title { font-size: 20px; font-weight: 700; margin-bottom: 4px; }
+.page-sub { color: var(--muted); font-size: 13px; margin-bottom: 20px; }
+
+/* ── Strategy Cards ── */
+.section-title {
+  font-size: 11px; font-weight: 700; color: var(--muted);
+  text-transform: uppercase; letter-spacing: .08em;
+  margin: 20px 0 10px;
+}
+.strategy-grid { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
+.strategy-btn {
+  display: flex; flex-direction: column; gap: 2px;
+  padding: 10px 14px; border-radius: var(--radius);
+  border: 1px solid var(--border); background: var(--bg2);
+  color: var(--text); cursor: pointer; text-align: left;
+  font-family: inherit; transition: all .15s; min-width: 150px;
+}
+.strategy-btn:hover { border-color: var(--blue); background: var(--bg3); }
+.strategy-btn.active { border-color: var(--blue); background: rgba(88,166,255,.12); }
+.strategy-btn .s-name { font-size: 13px; font-weight: 600; }
+.strategy-btn .s-desc { font-size: 11px; color: var(--muted); line-height: 1.4; }
+.strategy-btn.ma .s-name  { color: var(--blue); }
+.strategy-btn.candle .s-name { color: var(--yellow); }
+.strategy-btn.combo .s-name  { color: var(--green); }
+
+/* ── Results ── */
+.results-header {
+  display: flex; align-items: center; justify-content: space-between;
+  margin: 24px 0 10px;
+}
+.results-title { font-size: 15px; font-weight: 600; }
+.results-count { font-size: 12px; color: var(--muted); }
+.loading { color: var(--muted); font-size: 13px; padding: 40px; text-align: center; }
+
+/* ── Table ── */
+.table-wrap { overflow-x: auto; border-radius: var(--radius); border: 1px solid var(--border); }
+table { width: 100%; border-collapse: collapse; }
+thead th {
+  background: var(--bg2); color: var(--muted); font-size: 11px;
+  font-weight: 600; text-transform: uppercase; letter-spacing: .06em;
+  padding: 8px 12px; text-align: right; white-space: nowrap;
+  border-bottom: 1px solid var(--border);
+}
+thead th:first-child, thead th:nth-child(2) { text-align: left; }
+tbody tr { border-bottom: 1px solid var(--border); transition: background .1s; }
+tbody tr:last-child { border-bottom: none; }
+tbody tr:hover { background: var(--bg2); }
+tbody td { padding: 9px 12px; font-size: 13px; text-align: right; white-space: nowrap; }
+tbody td:first-child, tbody td:nth-child(2) { text-align: left; }
+
+.stock-link { color: var(--blue); text-decoration: none; font-weight: 600; font-size: 13px; }
+.stock-link:hover { text-decoration: underline; }
+.stock-name { color: var(--text); font-size: 13px; }
+.up   { color: var(--red); }
+.down { color: var(--green); }
+.neutral { color: var(--muted); }
+.tag-cell { display: flex; flex-wrap: wrap; gap: 4px; }
+.sig-tag {
+  font-size: 10px; padding: 1px 6px; border-radius: 3px;
+  font-weight: 600;
+}
+.sig-tag.ma    { background: rgba(88,166,255,.18); color: var(--blue); }
+.sig-tag.candle{ background: rgba(227,179,65,.18); color: var(--yellow); }
+.sig-tag.vol   { background: rgba(63,185,80,.18); color: var(--green); }
+.sig-tag.rsi   { background: rgba(188,140,255,.18); color: var(--purple); }
+
+/* ── No data ── */
+.empty { padding: 60px; text-align: center; color: var(--muted); }
+</style>
+</head>
+<body>
+
+<nav class="nav">
+  <a href="/" class="nav-brand">台股分析</a>
+  <a href="/chart.html">K線圖</a>
+  <a href="/sectors.html">類股</a>
+  <a href="/screen.html" class="active">策略篩選</a>
+  <a href="/backtest.html">策略回測</a>
+</nav>
+
+<div class="page">
+  <div class="page-title">策略篩選</div>
+  <div class="page-sub">以均線與K棒型態為主，量能與技術指標為輔，篩選潛力股</div>
+
+  <!-- 均線策略 -->
+  <div class="section-title">📐 均線系列</div>
+  <div class="strategy-grid">
+    <button class="strategy-btn ma" data-strategy="ma_bullish">
+      <span class="s-name">多頭排列</span>
+      <span class="s-desc">收 > MA5 > MA20 > MA60<br>標準多頭格局</span>
+    </button>
+    <button class="strategy-btn ma" data-strategy="ma20_breakout">
+      <span class="s-name">突破 MA20</span>
+      <span class="s-desc">今日剛站上20日均線<br>短期轉強訊號</span>
+    </button>
+    <button class="strategy-btn ma" data-strategy="ma60_breakout">
+      <span class="s-name">突破 MA60</span>
+      <span class="s-desc">今日剛站上60日均線<br>中長期反轉訊號</span>
+    </button>
+    <button class="strategy-btn ma" data-strategy="golden_cross">
+      <span class="s-name">黃金交叉</span>
+      <span class="s-desc">MA5 剛上穿 MA20<br>短均線向上突破</span>
+    </button>
+  </div>
+
+  <!-- K棒策略 -->
+  <div class="section-title">🕯 K棒系列</div>
+  <div class="strategy-grid">
+    <button class="strategy-btn candle" data-strategy="strong_candle">
+      <span class="s-name">強勢長紅K</span>
+      <span class="s-desc">漲幅 ≥ 3%，收盤在<br>當日高點 70% 以上</span>
+    </button>
+    <button class="strategy-btn candle" data-strategy="bullish_engulfing">
+      <span class="s-name">看漲吞噬</span>
+      <span class="s-desc">今紅K實體完全覆蓋<br>昨黑K（反轉型態）</span>
+    </button>
+    <button class="strategy-btn candle" data-strategy="hammer">
+      <span class="s-name">長下影線</span>
+      <span class="s-desc">下影線 > 2×實體<br>止跌反彈訊號</span>
+    </button>
+  </div>
+
+  <!-- 複合策略 -->
+  <div class="section-title">⚡ 複合策略（均線 + K棒 + 量能）</div>
+  <div class="strategy-grid">
+    <button class="strategy-btn combo" data-strategy="ma_volume_breakout">
+      <span class="s-name">帶量突破均線</span>
+      <span class="s-desc">突破MA20 + 量能 > 1.5x<br>量增價漲，最強訊號</span>
+    </button>
+    <button class="strategy-btn combo" data-strategy="golden_cross_volume">
+      <span class="s-name">金叉放量</span>
+      <span class="s-desc">MA5穿MA20 + 量 > 1.3x<br>黃金交叉有量支撐</span>
+    </button>
+    <button class="strategy-btn combo" data-strategy="volume_breakout">
+      <span class="s-name">爆量攻擊</span>
+      <span class="s-desc">成交量 > 均量 2x<br>異常放量，市場關注</span>
+    </button>
+    <button class="strategy-btn combo" data-strategy="macd_golden_cross">
+      <span class="s-name">MACD 金叉</span>
+      <span class="s-desc">MACD 柱狀由負轉正<br>動能由空轉多</span>
+    </button>
+  </div>
+
+  <!-- Results -->
+  <div class="results-header" id="resultsHeader" style="display:none">
+    <div class="results-title" id="resultsTitle"></div>
+    <div class="results-count" id="resultsCount"></div>
+  </div>
+  <div id="resultsArea"></div>
+</div>
+
+<script>
+const STRATEGIES = {
+  ma_bullish:         { name: '多頭排列',     type: 'ma' },
+  ma20_breakout:      { name: '突破MA20',     type: 'ma' },
+  ma60_breakout:      { name: '突破MA60',     type: 'ma' },
+  golden_cross:       { name: '黃金交叉',     type: 'ma' },
+  strong_candle:      { name: '強勢長紅K',    type: 'candle' },
+  bullish_engulfing:  { name: '看漲吞噬',     type: 'candle' },
+  hammer:             { name: '長下影線',     type: 'candle' },
+  ma_volume_breakout: { name: '帶量突破均線', type: 'combo' },
+  golden_cross_volume:{ name: '金叉放量',     type: 'combo' },
+  volume_breakout:    { name: '爆量攻擊',     type: 'combo' },
+  macd_golden_cross:  { name: 'MACD金叉',     type: 'combo' },
+};
+
+let currentStrategy = null;
+
+document.querySelectorAll('.strategy-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.strategy-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    loadStrategy(btn.dataset.strategy);
+  });
+});
+
+async function loadStrategy(strategy) {
+  currentStrategy = strategy;
+  const area = document.getElementById('resultsArea');
+  const header = document.getElementById('resultsHeader');
+  const title = document.getElementById('resultsTitle');
+  const count = document.getElementById('resultsCount');
+
+  area.innerHTML = '<div class="loading">篩選中...</div>';
+  header.style.display = 'none';
+
+  try {
+    const res = await fetch(`/api/analysis/screen/strategy/${strategy}`);
+    const json = await res.json();
+
+    if (!json.success && !json.data) {
+      area.innerHTML = `<div class="empty">篩選失敗：${json.error || '未知錯誤'}</div>`;
+      return;
+    }
+
+    const data = json.data || [];
+    const info = STRATEGIES[strategy] || { name: strategy };
+
+    header.style.display = 'flex';
+    title.textContent = info.name;
+    count.textContent = `共 ${data.length} 檔`;
+
+    if (data.length === 0) {
+      area.innerHTML = '<div class="empty">目前無符合條件的股票</div>';
+      return;
+    }
+
+    area.innerHTML = buildTable(strategy, data);
+  } catch (e) {
+    area.innerHTML = `<div class="empty">載入失敗：${e.message}</div>`;
+  }
+}
+
+function fmt(n, d = 2) {
+  if (n == null || isNaN(n)) return '—';
+  return Number(n).toFixed(d);
+}
+function fmtVol(v) {
+  if (!v) return '—';
+  v = Number(v);
+  return v >= 1e8 ? (v / 1e8).toFixed(1) + '億' : v >= 1e4 ? (v / 1e4).toFixed(0) + '萬' : v.toLocaleString();
+}
+function chgClass(v) { return v > 0 ? 'up' : v < 0 ? 'down' : 'neutral'; }
+function chgStr(v)  { v = parseFloat(v); return isNaN(v) ? '—' : (v > 0 ? '+' : '') + v.toFixed(2) + '%'; }
+
+function buildTable(strategy, rows) {
+  // 依策略決定顯示哪些欄位
+  const isMa     = ['ma_bullish', 'ma20_breakout', 'ma60_breakout', 'golden_cross', 'ma_volume_breakout', 'golden_cross_volume'].includes(strategy);
+  const isCandle = ['strong_candle', 'bullish_engulfing', 'hammer'].includes(strategy);
+  const showVol  = ['ma_volume_breakout', 'golden_cross_volume', 'volume_breakout'].includes(strategy);
+  const showRsi  = true;
+
+  let thead = `<tr>
+    <th>代號</th><th>名稱</th>
+    <th>收盤</th><th>漲跌%</th><th>成交量</th>`;
+  if (isMa)     thead += `<th>MA5</th><th>MA20</th><th>MA60</th>`;
+  if (isCandle) thead += `<th>開盤</th><th>最高</th><th>最低</th>`;
+  if (showVol)  thead += `<th>量比</th>`;
+  if (showRsi)  thead += `<th>RSI</th>`;
+  thead += `<th>訊號</th></tr>`;
+
+  const tbody = rows.map(r => {
+    const chg = parseFloat(r.change_percent);
+    const rsi = parseFloat(r.rsi);
+    const signals = buildSignals(strategy, r);
+
+    let cols = `
+      <td><a class="stock-link" href="/chart.html?id=${r.stock_id}" target="_blank">${r.stock_id}</a></td>
+      <td><span class="stock-name">${r.stock_name || ''}</span></td>
+      <td class="${chgClass(chg)}">${fmt(r.close_price)}</td>
+      <td class="${chgClass(chg)}">${chgStr(r.change_percent)}</td>
+      <td>${fmtVol(r.volume)}</td>`;
+    if (isMa) cols += `
+      <td class="${r.ma5 && r.close_price > r.ma5 ? 'up' : 'down'}">${fmt(r.ma5)}</td>
+      <td class="${r.ma20 && r.close_price > r.ma20 ? 'up' : 'down'}">${fmt(r.ma20)}</td>
+      <td class="${r.ma60 && r.close_price > r.ma60 ? 'up' : 'down'}">${fmt(r.ma60)}</td>`;
+    if (isCandle) cols += `
+      <td>${fmt(r.open_price)}</td>
+      <td>${fmt(r.high_price)}</td>
+      <td>${fmt(r.low_price)}</td>`;
+    if (showVol) cols += `<td class="${r.vol_ratio > 2 ? 'up' : ''}">${r.vol_ratio ? r.vol_ratio + 'x' : '—'}</td>`;
+    if (showRsi) cols += `<td class="${rsi < 30 ? 'down' : rsi > 70 ? 'up' : 'neutral'}">${fmt(rsi, 1)}</td>`;
+    cols += `<td class="tag-cell">${signals}</td>`;
+
+    return `<tr>${cols}</tr>`;
+  }).join('');
+
+  return `<div class="table-wrap"><table><thead>${thead}</thead><tbody>${tbody}</tbody></table></div>`;
+}
+
+function buildSignals(strategy, r) {
+  const tags = [];
+  const close = parseFloat(r.close_price);
+  const ma5   = parseFloat(r.ma5);
+  const ma20  = parseFloat(r.ma20);
+  const ma60  = parseFloat(r.ma60);
+  const rsi   = parseFloat(r.rsi);
+  const volRatio = parseFloat(r.vol_ratio);
+
+  // 均線訊號
+  if (!isNaN(ma5) && !isNaN(ma20) && !isNaN(ma60) && close > ma5 && ma5 > ma20 && ma20 > ma60)
+    tags.push('<span class="sig-tag ma">多頭排列</span>');
+  else if (!isNaN(ma5) && !isNaN(ma20) && close > ma5 && ma5 > ma20)
+    tags.push('<span class="sig-tag ma">MA5>MA20</span>');
+  if (!isNaN(ma60) && close > ma60)
+    tags.push('<span class="sig-tag ma">站上MA60</span>');
+
+  // 量能訊號
+  if (!isNaN(volRatio) && volRatio >= 2)
+    tags.push('<span class="sig-tag vol">暴量' + volRatio + 'x</span>');
+  else if (!isNaN(volRatio) && volRatio >= 1.5)
+    tags.push('<span class="sig-tag vol">放量' + volRatio + 'x</span>');
+
+  // RSI 訊號
+  if (!isNaN(rsi)) {
+    if (rsi < 30) tags.push('<span class="sig-tag rsi">RSI超賣</span>');
+    else if (rsi < 50) tags.push('<span class="sig-tag rsi">RSI低檔</span>');
+    else if (rsi > 70) tags.push('<span class="sig-tag rsi">RSI超買</span>');
+  }
+
+  // K棒訊號
+  const chg = parseFloat(r.change_percent);
+  if (!isNaN(chg) && chg >= 5) tags.push('<span class="sig-tag candle">強漲' + chg.toFixed(1) + '%</span>');
+  else if (!isNaN(chg) && chg >= 3) tags.push('<span class="sig-tag candle">漲' + chg.toFixed(1) + '%</span>');
+
+  return tags.join('') || '<span style="color:var(--muted)">—</span>';
+}
+</script>
+</body>
+</html>

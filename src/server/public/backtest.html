@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>策略回測 - 台股分析</title>
+<style>
+:root {
+  --bg:#0d1117; --bg2:#161b22; --bg3:#21262d;
+  --border:#30363d; --text:#e6edf3; --muted:#8b949e;
+  --green:#3fb950; --red:#f85149; --yellow:#e3b341;
+  --blue:#58a6ff; --purple:#bc8cff; --orange:#f0a070;
+  --radius:8px;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:14px;}
+
+/* Nav */
+.nav{display:flex;align-items:center;gap:16px;padding:10px 20px;background:var(--bg2);border-bottom:1px solid var(--border);position:sticky;top:0;z-index:100;}
+.nav-brand{font-weight:700;font-size:15px;color:var(--blue);text-decoration:none;}
+.nav a{color:var(--muted);text-decoration:none;font-size:13px;}
+.nav a:hover,.nav a.active{color:var(--text);}
+
+/* Layout */
+.page{max-width:1300px;margin:0 auto;padding:20px;}
+.page-title{font-size:20px;font-weight:700;margin-bottom:4px;}
+.page-sub{color:var(--muted);font-size:13px;margin-bottom:20px;}
+
+/* Config panel */
+.config-panel{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:18px 20px;margin-bottom:20px;}
+.config-row{display:flex;gap:20px;flex-wrap:wrap;align-items:flex-start;}
+.config-block{display:flex;flex-direction:column;gap:6px;}
+.config-label{font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;}
+
+/* Stock input */
+.stock-input{display:flex;gap:8px;align-items:center;}
+.stock-input input{
+  padding:7px 12px;border-radius:6px;border:1px solid var(--border);
+  background:var(--bg3);color:var(--text);font-size:14px;font-family:inherit;width:110px;
+}
+.stock-input input:focus{outline:none;border-color:var(--blue);}
+
+/* Logic toggle */
+.logic-toggle{display:flex;border:1px solid var(--border);border-radius:6px;overflow:hidden;}
+.logic-toggle button{
+  padding:6px 14px;border:none;background:transparent;
+  color:var(--muted);cursor:pointer;font-family:inherit;font-size:13px;font-weight:600;
+  transition:all .15s;
+}
+.logic-toggle button.active{background:var(--blue);color:#fff;}
+
+/* Run button */
+.run-btn{
+  padding:8px 22px;border-radius:6px;border:none;
+  background:var(--blue);color:#fff;font-family:inherit;
+  font-size:14px;font-weight:600;cursor:pointer;transition:opacity .15s;
+  align-self:flex-end;
+}
+.run-btn:hover{opacity:.85;}
+.run-btn:disabled{opacity:.45;cursor:default;}
+
+/* Section title */
+.section-title{font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin:16px 0 8px;}
+
+/* Strategy pills */
+.strategy-group{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:4px;}
+.s-pill{
+  display:flex;align-items:center;gap:5px;
+  padding:5px 10px;border-radius:5px;border:1px solid var(--border);
+  background:var(--bg3);cursor:pointer;font-family:inherit;font-size:12px;font-weight:500;
+  color:var(--muted);transition:all .12s;white-space:nowrap;
+}
+.s-pill:hover{border-color:var(--blue);color:var(--text);}
+.s-pill.active{color:#fff;border-color:transparent;}
+.s-pill.active.ma    {background:rgba(88,166,255,.35);border-color:var(--blue);color:var(--blue);}
+.s-pill.active.candle{background:rgba(227,179,65,.3);border-color:var(--yellow);color:var(--yellow);}
+.s-pill.active.combo {background:rgba(63,185,80,.25);border-color:var(--green);color:var(--green);}
+.s-pill .check{font-size:10px;}
+
+/* Stats cards */
+.stats-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px;margin-bottom:20px;}
+.stat-card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px;}
+.stat-card .sc-title{font-size:11px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px;}
+.stat-card .sc-hold{font-size:12px;color:var(--muted);margin-bottom:2px;}
+.stat-row{display:flex;justify-content:space-between;align-items:baseline;margin:3px 0;}
+.stat-row .sk{font-size:12px;color:var(--muted);}
+.stat-row .sv{font-size:13px;font-weight:700;}
+.up{color:var(--red);}
+.down{color:var(--green);}
+.neutral{color:var(--muted);}
+
+/* Table */
+.table-wrap{overflow-x:auto;border-radius:var(--radius);border:1px solid var(--border);}
+table{width:100%;border-collapse:collapse;}
+thead th{
+  background:var(--bg2);color:var(--muted);font-size:11px;font-weight:600;
+  text-transform:uppercase;letter-spacing:.06em;padding:8px 10px;
+  text-align:right;white-space:nowrap;border-bottom:1px solid var(--border);
+}
+thead th:first-child,thead th:nth-child(2){text-align:left;}
+tbody tr{border-bottom:1px solid var(--border);transition:background .1s;}
+tbody tr:last-child{border-bottom:none;}
+tbody tr:hover{background:var(--bg2);}
+td{padding:8px 10px;font-size:12px;text-align:right;white-space:nowrap;}
+td:first-child,td:nth-child(2){text-align:left;}
+.ret-cell{font-weight:700;}
+.tag{font-size:10px;padding:1px 6px;border-radius:3px;font-weight:600;margin-right:3px;display:inline-block;}
+.tag.ma{background:rgba(88,166,255,.18);color:var(--blue);}
+.tag.candle{background:rgba(227,179,65,.18);color:var(--yellow);}
+.tag.combo{background:rgba(63,185,80,.18);color:var(--green);}
+
+/* Misc */
+.empty{padding:50px;text-align:center;color:var(--muted);}
+.result-meta{display:flex;gap:16px;flex-wrap:wrap;margin-bottom:14px;font-size:13px;color:var(--muted);}
+.result-meta b{color:var(--text);}
+.selected-note{font-size:12px;color:var(--muted);margin-top:4px;}
+</style>
+</head>
+<body>
+
+<nav class="nav">
+  <a href="/" class="nav-brand">台股分析</a>
+  <a href="/chart.html">K線圖</a>
+  <a href="/sectors.html">類股</a>
+  <a href="/screen.html">策略篩選</a>
+  <a href="/backtest.html" class="active">策略回測</a>
+</nav>
+
+<div class="page">
+  <div class="page-title">策略回測</div>
+  <div class="page-sub">選擇策略組合，對單一股票進行歷史回測，查看訊號觸發後 3/5/10/20 日的報酬表現</div>
+
+  <!-- 設定面板 -->
+  <div class="config-panel">
+    <!-- 策略選擇 -->
+    <div class="section-title">選擇策略（可複合選取）</div>
+
+    <div style="margin-bottom:10px;">
+      <div style="font-size:11px;color:var(--muted);margin-bottom:5px;">📐 均線系列</div>
+      <div class="strategy-group">
+        <button class="s-pill ma" data-strategy="ma_bullish">
+          <span class="check">☐</span> 多頭排列
+        </button>
+        <button class="s-pill ma" data-strategy="ma20_breakout">
+          <span class="check">☐</span> 突破MA20
+        </button>
+        <button class="s-pill ma" data-strategy="ma60_breakout">
+          <span class="check">☐</span> 突破MA60
+        </button>
+        <button class="s-pill ma" data-strategy="golden_cross">
+          <span class="check">☐</span> 黃金交叉
+        </button>
+      </div>
+    </div>
+
+    <div style="margin-bottom:10px;">
+      <div style="font-size:11px;color:var(--muted);margin-bottom:5px;">🕯 K棒系列</div>
+      <div class="strategy-group">
+        <button class="s-pill candle" data-strategy="strong_candle">
+          <span class="check">☐</span> 強勢長紅K
+        </button>
+        <button class="s-pill candle" data-strategy="bullish_engulfing">
+          <span class="check">☐</span> 看漲吞噬
+        </button>
+        <button class="s-pill candle" data-strategy="hammer">
+          <span class="check">☐</span> 長下影線
+        </button>
+      </div>
+    </div>
+
+    <div style="margin-bottom:14px;">
+      <div style="font-size:11px;color:var(--muted);margin-bottom:5px;">⚡ 複合策略</div>
+      <div class="strategy-group">
+        <button class="s-pill combo" data-strategy="ma_volume_breakout">
+          <span class="check">☐</span> 帶量突破均線
+        </button>
+        <button class="s-pill combo" data-strategy="golden_cross_volume">
+          <span class="check">☐</span> 金叉放量
+        </button>
+        <button class="s-pill combo" data-strategy="volume_breakout">
+          <span class="check">☐</span> 爆量攻擊
+        </button>
+        <button class="s-pill combo" data-strategy="macd_golden_cross">
+          <span class="check">☐</span> MACD金叉
+        </button>
+      </div>
+    </div>
+
+    <!-- 條件邏輯 + 股號 + 執行 -->
+    <div class="config-row">
+      <div class="config-block">
+        <div class="config-label">策略邏輯</div>
+        <div class="logic-toggle">
+          <button id="btnAnd" class="active" onclick="setLogic('AND')">AND（全部符合）</button>
+          <button id="btnOr"              onclick="setLogic('OR')">OR（任一符合）</button>
+        </div>
+      </div>
+      <div class="config-block">
+        <div class="config-label">股票代號</div>
+        <div class="stock-input">
+          <input id="stockInput" type="text" placeholder="如 3711" value="3711">
+        </div>
+      </div>
+      <button class="run-btn" id="runBtn" onclick="runBacktest()">▶ 執行回測</button>
+    </div>
+    <div class="selected-note" id="selectedNote">尚未選擇策略</div>
+  </div>
+
+  <!-- 結果區 -->
+  <div id="resultArea"></div>
+</div>
+
+<script>
+let selectedStrategies = new Set();
+let currentLogic = 'AND';
+
+const STRATEGY_TYPES = {
+  ma_bullish:'ma', ma20_breakout:'ma', ma60_breakout:'ma', golden_cross:'ma',
+  strong_candle:'candle', bullish_engulfing:'candle', hammer:'candle',
+  ma_volume_breakout:'combo', golden_cross_volume:'combo', volume_breakout:'combo', macd_golden_cross:'combo',
+};
+const STRATEGY_NAMES = {
+  ma_bullish:'多頭排列', ma20_breakout:'突破MA20', ma60_breakout:'突破MA60',
+  golden_cross:'黃金交叉', strong_candle:'強勢長紅K', bullish_engulfing:'看漲吞噬',
+  hammer:'長下影線', ma_volume_breakout:'帶量突破均線', golden_cross_volume:'金叉放量',
+  volume_breakout:'爆量攻擊', macd_golden_cross:'MACD金叉',
+};
+
+// 初始化 URL 參數（從 screen.html 帶過來）
+const urlParams = new URLSearchParams(location.search);
+if (urlParams.get('strategies')) {
+  urlParams.get('strategies').split(',').forEach(s => selectedStrategies.add(s.trim()));
+}
+if (urlParams.get('stock')) {
+  document.getElementById('stockInput').value = urlParams.get('stock');
+}
+
+document.querySelectorAll('.s-pill').forEach(btn => {
+  const s = btn.dataset.strategy;
+  if (selectedStrategies.has(s)) activatePill(btn, s);
+  btn.addEventListener('click', () => toggleStrategy(btn, s));
+});
+updateNote();
+
+function activatePill(btn, strategy) {
+  btn.classList.add('active');
+  btn.querySelector('.check').textContent = '☑';
+}
+function deactivatePill(btn) {
+  btn.classList.remove('active');
+  btn.querySelector('.check').textContent = '☐';
+}
+
+function toggleStrategy(btn, strategy) {
+  if (selectedStrategies.has(strategy)) {
+    selectedStrategies.delete(strategy);
+    deactivatePill(btn);
+  } else {
+    selectedStrategies.add(strategy);
+    activatePill(btn, strategy);
+  }
+  updateNote();
+}
+
+function setLogic(l) {
+  currentLogic = l;
+  document.getElementById('btnAnd').classList.toggle('active', l === 'AND');
+  document.getElementById('btnOr').classList.toggle('active', l === 'OR');
+}
+
+function updateNote() {
+  const note = document.getElementById('selectedNote');
+  if (selectedStrategies.size === 0) {
+    note.textContent = '尚未選擇策略';
+  } else {
+    const names = [...selectedStrategies].map(s => STRATEGY_NAMES[s] || s).join('、');
+    const logic = currentLogic === 'AND' ? '全部符合（AND）' : '任一符合（OR）';
+    note.textContent = `已選：${names}｜條件：${logic}`;
+  }
+}
+
+async function runBacktest() {
+  if (selectedStrategies.size === 0) { alert('請至少選擇一個策略'); return; }
+  const stockId = document.getElementById('stockInput').value.trim();
+  if (!stockId) { alert('請輸入股票代號'); return; }
+
+  const btn = document.getElementById('runBtn');
+  btn.disabled = true;
+  btn.textContent = '回測中...';
+  document.getElementById('resultArea').innerHTML = '<div class="empty">正在載入歷史資料並計算...</div>';
+
+  try {
+    const strategies = [...selectedStrategies].join(',');
+    const res  = await fetch(`/api/backtest?stock_id=${stockId}&strategies=${strategies}&logic=${currentLogic}`);
+    const json = await res.json();
+
+    if (!json.success) {
+      document.getElementById('resultArea').innerHTML = `<div class="empty">❌ ${json.error}</div>`;
+      return;
+    }
+    renderResult(json);
+  } catch (e) {
+    document.getElementById('resultArea').innerHTML = `<div class="empty">載入失敗：${e.message}</div>`;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '▶ 執行回測';
+  }
+}
+
+function fmt(n, d = 2) {
+  if (n == null || isNaN(n)) return '—';
+  return Number(n).toFixed(d);
+}
+function retClass(v) {
+  if (v == null) return 'neutral';
+  return v > 0 ? 'up' : v < 0 ? 'down' : 'neutral';
+}
+function retStr(v) {
+  if (v == null) return '—';
+  return (v > 0 ? '+' : '') + Number(v).toFixed(2) + '%';
+}
+
+function renderResult(data) {
+  const { stock_id, strategy_names, logic, data_range, total_signals, stats, signals } = data;
+  let html = '';
+
+  // 結果摘要
+  html += `<div class="result-meta">
+    <span>股票：<b>${stock_id}</b></span>
+    <span>策略：<b>${strategy_names.join(' ' + (logic === 'AND' ? '＋' : '｜') + ' ')}</b></span>
+    <span>邏輯：<b>${logic === 'AND' ? '全部符合(AND)' : '任一符合(OR)'}</b></span>
+    <span>資料期間：<b>${data_range.from} ~ ${data_range.to}</b>（${data_range.total_trading_days} 個交易日）</span>
+    <span>觸發次數：<b>${total_signals} 次</b></span>
+  </div>`;
+
+  if (total_signals === 0) {
+    html += '<div class="empty">此期間內未出現符合條件的訊號</div>';
+    document.getElementById('resultArea').innerHTML = html;
+    return;
+  }
+
+  // 統計卡片
+  html += '<div class="section-title">持有報酬統計</div><div class="stats-grid">';
+  const holdLabels = { ret3d: '持有 3 日', ret5d: '持有 5 日', ret10d: '持有 10 日', ret20d: '持有 20 日' };
+  for (const [key, label] of Object.entries(holdLabels)) {
+    const s = stats[key];
+    if (!s) { html += `<div class="stat-card"><div class="sc-title">${label}</div><div class="empty" style="padding:10px;font-size:12px;">資料不足</div></div>`; continue; }
+    const wrClass = parseFloat(s.win_rate) >= 60 ? 'up' : parseFloat(s.win_rate) < 40 ? 'down' : 'neutral';
+    const avgClass = parseFloat(s.avg_ret) > 0 ? 'up' : parseFloat(s.avg_ret) < 0 ? 'down' : 'neutral';
+    html += `<div class="stat-card">
+      <div class="sc-title">${label}</div>
+      <div class="stat-row"><span class="sk">樣本數</span><span class="sv">${s.count} 次</span></div>
+      <div class="stat-row"><span class="sk">勝率</span><span class="sv ${wrClass}">${s.win_rate}%</span></div>
+      <div class="stat-row"><span class="sk">平均報酬</span><span class="sv ${avgClass}">${s.avg_ret > 0 ? '+' : ''}${s.avg_ret}%</span></div>
+      <div class="stat-row"><span class="sk">中位報酬</span><span class="sv ${parseFloat(s.median) > 0 ? 'up' : 'down'}">${s.median > 0 ? '+' : ''}${s.median}%</span></div>
+      <div class="stat-row"><span class="sk">最大獲利</span><span class="sv up">+${s.max_ret}%</span></div>
+      <div class="stat-row"><span class="sk">最大虧損</span><span class="sv down">${s.min_ret}%</span></div>
+    </div>`;
+  }
+  html += '</div>';
+
+  // 明細表格
+  html += `<div class="section-title">訊號明細（共 ${signals.length} 筆）</div>`;
+  html += `<div class="table-wrap"><table>
+    <thead><tr>
+      <th>#</th><th>訊號日期</th><th>收盤價</th><th>量比</th>
+      <th>MA20</th><th>RSI</th>
+      <th>+3日</th><th>+5日</th><th>+10日</th><th>+20日</th>
+      <th>觸發策略</th>
+    </tr></thead><tbody>`;
+
+  signals.slice().reverse().forEach((sig, idx) => {
+    const date  = typeof sig.date === 'string' ? sig.date.slice(0, 10) : String(sig.date).slice(0, 10);
+    const tags  = sig.triggered_strategies.map(n => {
+      const type = Object.entries(STRATEGY_NAMES).find(([,v]) => v === n)?.[0];
+      const cls  = STRATEGY_TYPES[type] || 'combo';
+      return `<span class="tag ${cls}">${n}</span>`;
+    }).join('');
+
+    html += `<tr>
+      <td style="color:var(--muted)">${signals.length - idx}</td>
+      <td>${date}</td>
+      <td>${fmt(sig.close)}</td>
+      <td class="${sig.vol_ratio >= 2 ? 'up' : sig.vol_ratio >= 1.5 ? '' : 'neutral'}">${sig.vol_ratio ? sig.vol_ratio + 'x' : '—'}</td>
+      <td class="${sig.ma20 && sig.close > sig.ma20 ? 'up' : 'down'}">${fmt(sig.ma20)}</td>
+      <td class="${sig.rsi < 30 ? 'down' : sig.rsi > 70 ? 'up' : 'neutral'}">${fmt(sig.rsi, 1)}</td>
+      <td class="ret-cell ${retClass(sig.ret3d)}">${retStr(sig.ret3d)}</td>
+      <td class="ret-cell ${retClass(sig.ret5d)}">${retStr(sig.ret5d)}</td>
+      <td class="ret-cell ${retClass(sig.ret10d)}">${retStr(sig.ret10d)}</td>
+      <td class="ret-cell ${retClass(sig.ret20d)}">${retStr(sig.ret20d)}</td>
+      <td>${tags}</td>
+    </tr>`;
+  });
+
+  html += '</tbody></table></div>';
+  document.getElementById('resultArea').innerHTML = html;
+}
+
+// Enter 鍵執行
+document.getElementById('stockInput').addEventListener('keydown', e => {
+  if (e.key === 'Enter') runBacktest();
+});
+</script>
+</body>
+</html>

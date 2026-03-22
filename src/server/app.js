@@ -6,6 +6,7 @@ require('dotenv').config();
 const Anthropic = require('@anthropic-ai/sdk');
 
 const { detectAllSignals, scoreStock, screenByStrategy } = require('../analysis/strategies');
+const { backtestStock } = require('../analysis/backtest');
 const { analyzeInstitutionalTrend, detectAccumulation, analyzeConsensus, analyzeMarginTrend, screenByInstitutional } = require('../analysis/institutionalAnalysis');
 const { analyzeRevenueTrend, calculateValuation, getFinancialSummary, scoreFundamental } = require('../analysis/fundamentalAnalysis');
 
@@ -226,6 +227,23 @@ app.get('/api/analysis/screen/institutional', async (req, res) => {
       trust_net_min: trust_net_min ? parseInt(trust_net_min) : undefined,
       days: days ? parseInt(days) : 5
     });
+    res.json({ success: true, ...result });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// ============================================
+// 回測 API
+// ============================================
+
+app.get('/api/backtest', async (req, res) => {
+  try {
+    const { stock_id, strategies, logic } = req.query;
+    if (!stock_id) return res.status(400).json({ success: false, error: 'stock_id 必填' });
+    const stratList = (strategies || '').split(',').map(s => s.trim()).filter(Boolean);
+    const result = await backtestStock(stock_id, stratList, logic === 'OR' ? 'OR' : 'AND');
+    if (result.error) return res.status(400).json({ success: false, error: result.error });
     res.json({ success: true, ...result });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });

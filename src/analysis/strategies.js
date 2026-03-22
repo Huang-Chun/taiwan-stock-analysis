@@ -339,8 +339,181 @@ async function screenByStrategy(strategy, options = {}) {
           ORDER BY bandwidth ASC LIMIT 50`;
         break;
 
+      // ── 均線系列 ──────────────────────────────────────────
+      case 'ma_bullish':
+        // 多頭排列：收 > MA5 > MA20 > MA60，且MA60 斜率向上
+        query = `
+          SELECT ti.stock_id, s.stock_name, dp.close_price, dp.change_percent, dp.volume,
+            ti.ma5, ti.ma20, ti.ma60, ti.rsi, ti.adx, ti.trade_date,
+            ROUND((dp.close_price - ti.ma20) / ti.ma20 * 100, 2) AS above_ma20_pct
+          FROM technical_indicators ti
+          JOIN stocks s ON ti.stock_id = s.stock_id
+          JOIN daily_prices dp ON ti.stock_id = dp.stock_id AND ti.trade_date = dp.trade_date
+          WHERE ti.trade_date = (SELECT MAX(trade_date) FROM technical_indicators WHERE stock_id = ti.stock_id)
+            AND dp.close_price > ti.ma5
+            AND ti.ma5 > ti.ma20
+            AND ti.ma20 > ti.ma60
+            AND ti.ma5 IS NOT NULL AND ti.ma20 IS NOT NULL AND ti.ma60 IS NOT NULL
+          ORDER BY dp.volume DESC LIMIT 100`;
+        break;
+
+      case 'ma20_breakout':
+        // 剛突破MA20：今收 > MA20，前日收 <= 前日MA20
+        query = `
+          SELECT t1.stock_id, s.stock_name, dp1.close_price, dp1.change_percent, dp1.volume,
+            t1.ma20, t1.ma5, t1.rsi, t1.trade_date
+          FROM technical_indicators t1
+          JOIN technical_indicators t2 ON t1.stock_id = t2.stock_id
+          JOIN stocks s ON t1.stock_id = s.stock_id
+          JOIN daily_prices dp1 ON t1.stock_id = dp1.stock_id AND t1.trade_date = dp1.trade_date
+          JOIN daily_prices dp2 ON t1.stock_id = dp2.stock_id AND t2.trade_date = dp2.trade_date
+          WHERE t1.trade_date = (SELECT MAX(trade_date) FROM technical_indicators WHERE stock_id = t1.stock_id)
+            AND t2.trade_date = (SELECT MAX(trade_date) FROM technical_indicators WHERE stock_id = t1.stock_id AND trade_date < t1.trade_date)
+            AND dp1.close_price > t1.ma20
+            AND dp2.close_price <= t2.ma20
+            AND t1.ma20 IS NOT NULL
+          ORDER BY dp1.volume DESC LIMIT 100`;
+        break;
+
+      case 'ma60_breakout':
+        // 剛突破MA60（中長期反轉訊號）
+        query = `
+          SELECT t1.stock_id, s.stock_name, dp1.close_price, dp1.change_percent, dp1.volume,
+            t1.ma20, t1.ma60, t1.rsi, t1.trade_date
+          FROM technical_indicators t1
+          JOIN technical_indicators t2 ON t1.stock_id = t2.stock_id
+          JOIN stocks s ON t1.stock_id = s.stock_id
+          JOIN daily_prices dp1 ON t1.stock_id = dp1.stock_id AND t1.trade_date = dp1.trade_date
+          JOIN daily_prices dp2 ON t1.stock_id = dp2.stock_id AND t2.trade_date = dp2.trade_date
+          WHERE t1.trade_date = (SELECT MAX(trade_date) FROM technical_indicators WHERE stock_id = t1.stock_id)
+            AND t2.trade_date = (SELECT MAX(trade_date) FROM technical_indicators WHERE stock_id = t1.stock_id AND trade_date < t1.trade_date)
+            AND dp1.close_price > t1.ma60
+            AND dp2.close_price <= t2.ma60
+            AND t1.ma60 IS NOT NULL
+          ORDER BY dp1.volume DESC LIMIT 100`;
+        break;
+
+      // ── K棒系列 ───────────────────────────────────────────
+      case 'strong_candle':
+        // 強勢長紅K：漲幅≥3%，收盤在當日區間 70% 以上
+        query = `
+          SELECT dp.stock_id, s.stock_name, dp.close_price, dp.change_percent, dp.volume,
+            dp.open_price, dp.high_price, dp.low_price, dp.trade_date,
+            ROUND((dp.close_price - dp.low_price) / NULLIF(dp.high_price - dp.low_price, 0) * 100, 1) AS candle_position,
+            ti.ma20, ti.ma60, ti.rsi
+          FROM daily_prices dp
+          JOIN stocks s ON dp.stock_id = s.stock_id
+          JOIN technical_indicators ti ON dp.stock_id = ti.stock_id AND dp.trade_date = ti.trade_date
+          WHERE dp.trade_date = (SELECT MAX(trade_date) FROM daily_prices WHERE stock_id = dp.stock_id)
+            AND dp.change_percent >= 3
+            AND (dp.close_price - dp.low_price) / NULLIF(dp.high_price - dp.low_price, 0) >= 0.7
+          ORDER BY dp.change_percent DESC LIMIT 100`;
+        break;
+
+      case 'bullish_engulfing':
+        // 看漲吞噬：今天大紅K實體覆蓋昨天跌幅
+        query = `
+          SELECT dp1.stock_id, s.stock_name, dp1.close_price, dp1.change_percent, dp1.volume,
+            dp1.open_price, dp1.high_price, dp1.low_price, dp1.trade_date,
+            dp2.close_price AS prev_close, dp2.open_price AS prev_open,
+            ti.ma20, ti.rsi
+          FROM daily_prices dp1
+          JOIN daily_prices dp2 ON dp1.stock_id = dp2.stock_id
+          JOIN stocks s ON dp1.stock_id = s.stock_id
+          JOIN technical_indicators ti ON dp1.stock_id = ti.stock_id AND dp1.trade_date = ti.trade_date
+          WHERE dp1.trade_date = (SELECT MAX(trade_date) FROM daily_prices WHERE stock_id = dp1.stock_id)
+            AND dp2.trade_date = (SELECT MAX(trade_date) FROM daily_prices WHERE stock_id = dp1.stock_id AND trade_date < dp1.trade_date)
+            AND dp1.close_price > dp1.open_price
+            AND dp2.close_price < dp2.open_price
+            AND dp1.open_price <= dp2.close_price
+            AND dp1.close_price >= dp2.open_price
+          ORDER BY dp1.volume DESC LIMIT 100`;
+        break;
+
+      case 'hammer':
+        // 長下影線（槌頭K）：下影線 > 2×實體，上影線 < 實體
+        query = `
+          SELECT dp.stock_id, s.stock_name, dp.close_price, dp.change_percent, dp.volume,
+            dp.open_price, dp.high_price, dp.low_price, dp.trade_date,
+            ROUND(LEAST(dp.open_price, dp.close_price) - dp.low_price, 2) AS lower_shadow,
+            ROUND(ABS(dp.close_price - dp.open_price), 2) AS body,
+            ti.ma20, ti.ma60, ti.rsi
+          FROM daily_prices dp
+          JOIN stocks s ON dp.stock_id = s.stock_id
+          JOIN technical_indicators ti ON dp.stock_id = ti.stock_id AND dp.trade_date = ti.trade_date
+          WHERE dp.trade_date = (SELECT MAX(trade_date) FROM daily_prices WHERE stock_id = dp.stock_id)
+            AND ABS(dp.close_price - dp.open_price) > 0
+            AND (LEAST(dp.open_price, dp.close_price) - dp.low_price)
+                > 2 * ABS(dp.close_price - dp.open_price)
+            AND (dp.high_price - GREATEST(dp.open_price, dp.close_price))
+                < ABS(dp.close_price - dp.open_price)
+          ORDER BY
+            (LEAST(dp.open_price, dp.close_price) - dp.low_price)
+            / NULLIF(ABS(dp.close_price - dp.open_price), 0) DESC
+          LIMIT 100`;
+        break;
+
+      // ── 複合策略（均線 + K棒 + 量能）────────────────────────
+      case 'ma_volume_breakout':
+        // 帶量突破MA20：今天突破MA20 + 成交量 > 1.5x 均量
+        query = `
+          SELECT t1.stock_id, s.stock_name, dp1.close_price, dp1.change_percent, dp1.volume,
+            t1.ma20, t1.ma5, t1.rsi, t1.trade_date,
+            ROUND(dp1.volume / NULLIF((
+              SELECT AVG(dp3.volume) FROM (
+                SELECT volume FROM daily_prices
+                WHERE stock_id = dp1.stock_id AND trade_date < dp1.trade_date
+                ORDER BY trade_date DESC LIMIT 20
+              ) dp3
+            ), 0), 2) AS vol_ratio
+          FROM technical_indicators t1
+          JOIN technical_indicators t2 ON t1.stock_id = t2.stock_id
+          JOIN stocks s ON t1.stock_id = s.stock_id
+          JOIN daily_prices dp1 ON t1.stock_id = dp1.stock_id AND t1.trade_date = dp1.trade_date
+          JOIN daily_prices dp2 ON t1.stock_id = dp2.stock_id AND t2.trade_date = dp2.trade_date
+          WHERE t1.trade_date = (SELECT MAX(trade_date) FROM technical_indicators WHERE stock_id = t1.stock_id)
+            AND t2.trade_date = (SELECT MAX(trade_date) FROM technical_indicators WHERE stock_id = t1.stock_id AND trade_date < t1.trade_date)
+            AND dp1.close_price > t1.ma20
+            AND dp2.close_price <= t2.ma20
+            AND dp1.volume > (
+              SELECT AVG(volume) * 1.5 FROM daily_prices dp4
+              WHERE dp4.stock_id = dp1.stock_id AND dp4.trade_date < dp1.trade_date
+              ORDER BY dp4.trade_date DESC LIMIT 20
+            )
+            AND t1.ma20 IS NOT NULL
+          ORDER BY vol_ratio DESC LIMIT 100`;
+        break;
+
+      case 'golden_cross_volume':
+        // 黃金交叉 + 成交量放大
+        query = `
+          SELECT t1.stock_id, s.stock_name, dp1.close_price, dp1.change_percent, dp1.volume,
+            t1.ma5, t1.ma20, t1.rsi, t1.trade_date,
+            ROUND(dp1.volume / NULLIF((
+              SELECT AVG(dp3.volume) FROM (
+                SELECT volume FROM daily_prices
+                WHERE stock_id = dp1.stock_id AND trade_date < dp1.trade_date
+                ORDER BY trade_date DESC LIMIT 20
+              ) dp3
+            ), 0), 2) AS vol_ratio
+          FROM technical_indicators t1
+          JOIN technical_indicators t2 ON t1.stock_id = t2.stock_id
+          JOIN stocks s ON t1.stock_id = s.stock_id
+          JOIN daily_prices dp1 ON t1.stock_id = dp1.stock_id AND t1.trade_date = dp1.trade_date
+          WHERE t1.trade_date = (SELECT MAX(trade_date) FROM technical_indicators WHERE stock_id = t1.stock_id)
+            AND t2.trade_date = (SELECT MAX(trade_date) FROM technical_indicators WHERE stock_id = t1.stock_id AND trade_date < t1.trade_date)
+            AND t1.ma5 > t1.ma20
+            AND t2.ma5 <= t2.ma20
+            AND dp1.volume > (
+              SELECT AVG(volume) * 1.3 FROM daily_prices dp4
+              WHERE dp4.stock_id = dp1.stock_id AND dp4.trade_date < dp1.trade_date
+              ORDER BY dp4.trade_date DESC LIMIT 20
+            )
+          ORDER BY vol_ratio DESC LIMIT 100`;
+        break;
+
       default:
-        return { error: '不支援的策略，可用: golden_cross, rsi_oversold, macd_golden_cross, volume_breakout, bollinger_squeeze' };
+        return { error: '不支援的策略，可用: golden_cross, rsi_oversold, macd_golden_cross, volume_breakout, bollinger_squeeze, ma_bullish, ma20_breakout, ma60_breakout, strong_candle, bullish_engulfing, hammer, ma_volume_breakout, golden_cross_volume' };
     }
 
     const [rows] = await connection.query(query, params);

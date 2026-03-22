@@ -280,6 +280,7 @@
 <div class="topbar">
   <a href="/">← 台股分析系統</a>
   <a href="/sectors.html">🗂 產業分類</a>
+  <a href="/screen.html">🔍 策略篩選</a>
   <div class="search-wrap">
     <input id="stockInput" type="text" placeholder="股票代號" value="2330" maxlength="6">
     <button class="btn" onclick="loadStock()">查詢</button>
@@ -669,7 +670,7 @@ function renderCharts(kline, ind) {
       backgroundColor:'#161b22', borderColor:'#30363d', textStyle:{color:'#e6edf3',fontSize:12},
       formatter:params=>{
         const c=params.find(p=>p.seriesName==='K線'); if(!c)return '';
-        const [o,cl,l,h]=c.value; const color=cl>=o?'#f85149':'#3fb950';
+        const [,o,cl,l,h]=c.data; const color=cl>=o?'#f85149':'#3fb950';
         let html=`<div style="margin-bottom:4px;color:#8b949e">${c.axisValue}</div>`;
         html+=`<div>開<b style="color:${color};margin-left:6px">${o}</b>　高<b style="color:${color}">${h}</b></div>`;
         html+=`<div>低<b style="color:${color};margin-left:6px">${l}</b>　收<b style="color:${color}">${cl}</b></div>`;
