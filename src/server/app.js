@@ -512,21 +512,44 @@ app.get('/api/stocks/:stockId/kline', async (req, res) => {
 });
 
 // ============================================
-// 管理用：一鍵更新股價 + 重算指標
+// 管理用：一鍵同步（SSE 串流進度）
 // ============================================
 
 app.post('/api/admin/sync', async (req, res) => {
+  const { syncAllStocksHistory } = require('../crawler/fetchDailyPrices');
+  const { calculateAllIndicators } = require('../analysis/calculateIndicators');
+  const { fetchRecentInstitutionalTrading } = require('../crawler/fetchInstitutionalTrading');
+  const { fetchRecentMarginTrading } = require('../crawler/fetchMarginTrading');
+
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.flushHeaders();
+
+  const emit = (data) => res.write(`data: ${JSON.stringify(data)}\n\n`);
+
   try {
-    const { fetchAllStocksLatestPrices } = require('../crawler/fetchDailyPrices');
-    const { calculateAllIndicators } = require('../analysis/calculateIndicators');
+    emit({ step: 'prices', status: 'start', msg: '正在補抓全市場股價（本月）...' });
+    const pr = await syncAllStocksHistory(1);
+    emit({ step: 'prices', status: 'done', msg: `股價更新完成：${pr.stocks} 檔，寫入 ${pr.records} 筆` });
 
-    const priceResult = await fetchAllStocksLatestPrices();
+    emit({ step: 'institutional', status: 'start', msg: '正在同步三大法人...' });
+    const instCount = await fetchRecentInstitutionalTrading();
+    emit({ step: 'institutional', status: 'done', msg: `三大法人同步完成：${instCount} 筆` });
+
+    emit({ step: 'margin', status: 'start', msg: '正在同步融資融券...' });
+    const marginCount = await fetchRecentMarginTrading();
+    emit({ step: 'margin', status: 'done', msg: `融資融券同步完成：${marginCount} 筆` });
+
+    emit({ step: 'indicators', status: 'start', msg: '正在計算技術指標...' });
     await calculateAllIndicators();
+    emit({ step: 'indicators', status: 'done', msg: '技術指標計算完成' });
 
-    res.json({ success: true, message: `已更新 ${priceResult.count} 檔股票股價（${priceResult.tradeDate}），技術指標重算完成` });
+    emit({ done: true });
   } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
+    emit({ error: error.message });
   }
+  res.end();
 });
 
 // ============================================

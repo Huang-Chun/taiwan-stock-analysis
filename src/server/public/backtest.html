@@ -20,6 +20,18 @@ body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSy
 .nav-brand{font-weight:700;font-size:15px;color:var(--blue);text-decoration:none;}
 .nav a{color:var(--muted);text-decoration:none;font-size:13px;}
 .nav a:hover,.nav a.active{color:var(--text);}
+.nav-sync{margin-left:auto;display:flex;align-items:center;gap:8px;}
+.btn-sync{background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:4px 10px;border-radius:6px;cursor:pointer;font-size:12px;white-space:nowrap;}
+.btn-sync:hover{background:var(--border);}
+.btn-sync:disabled{opacity:.5;cursor:default;}
+#syncStatus{padding:5px 20px;font-size:12px;background:var(--bg2);border-bottom:1px solid var(--border);display:none;}
+#syncStatus .sync-steps{display:flex;gap:16px;flex-wrap:wrap;}
+#syncStatus .sync-step{display:flex;align-items:center;gap:5px;}
+#syncStatus .sync-step .dot{width:7px;height:7px;border-radius:50%;background:var(--muted);}
+#syncStatus .sync-step.running .dot{background:var(--blue);animation:pulse .8s infinite alternate;}
+#syncStatus .sync-step.done .dot{background:var(--green);}
+#syncStatus .sync-step.error .dot{background:var(--red);}
+@keyframes pulse{from{opacity:.4}to{opacity:1}}
 
 /* Layout */
 .page{max-width:1300px;margin:0 auto;padding:20px;}
@@ -124,7 +136,11 @@ td:first-child,td:nth-child(2){text-align:left;}
   <a href="/sectors.html">類股</a>
   <a href="/screen.html">策略篩選</a>
   <a href="/backtest.html" class="active">策略回測</a>
+  <div class="nav-sync">
+    <button class="btn-sync" id="syncBtn" onclick="syncAll()">↻ 同步資料</button>
+  </div>
 </nav>
+<div id="syncStatus"></div>
 
 <div class="page">
   <div class="page-title">策略回測</div>
@@ -400,6 +416,56 @@ function renderResult(data) {
 document.getElementById('stockInput').addEventListener('keydown', e => {
   if (e.key === 'Enter') runBacktest();
 });
+
+async function syncAll() {
+  const btn = document.getElementById('syncBtn');
+  const st  = document.getElementById('syncStatus');
+  const STEPS = [
+    { key:'prices',        label:'股價' },
+    { key:'institutional', label:'法人' },
+    { key:'margin',        label:'融資券' },
+    { key:'indicators',    label:'技術指標' },
+  ];
+  btn.disabled = true; btn.textContent = '↻ 同步中...';
+  st.style.display = 'block';
+  st.innerHTML = '<div class="sync-steps">' +
+    STEPS.map(s => `<div class="sync-step" id="ss_${s.key}"><div class="dot"></div><span>${s.label}</span></div>`).join('') +
+  '</div>';
+  const setStep = (key, cls, label) => {
+    const el = document.getElementById('ss_' + key);
+    if (!el) return;
+    el.className = 'sync-step ' + cls;
+    el.querySelector('span').textContent = label;
+  };
+  try {
+    const res = await fetch('/api/admin/sync', { method: 'POST' });
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = '';
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      const parts = buf.split('\n\n');
+      buf = parts.pop();
+      for (const part of parts) {
+        const line = part.replace(/^data: /, '').trim();
+        if (!line) continue;
+        try {
+          const d = JSON.parse(line);
+          if (d.error) { st.innerHTML = `<span style="color:var(--red)">✗ ${d.error}</span>`; return; }
+          if (d.step && d.status === 'start') setStep(d.step, 'running', d.msg || STEPS.find(s=>s.key===d.step)?.label);
+          if (d.step && d.status === 'done')  setStep(d.step, 'done', d.msg || '✓');
+        } catch(_) {}
+      }
+    }
+  } catch(e) {
+    st.innerHTML = `<span style="color:var(--red)">✗ ${e.message}</span>`;
+  } finally {
+    btn.disabled = false; btn.textContent = '↻ 同步資料';
+    setTimeout(() => st.style.display = 'none', 10000);
+  }
+}
 </script>
 </body>
 </html>

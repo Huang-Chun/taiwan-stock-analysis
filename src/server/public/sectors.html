@@ -25,6 +25,16 @@
     .topbar a { color:var(--muted); text-decoration:none; font-size:15px; }
     .topbar a:hover { color:var(--blue); }
     .topbar-title { font-size:17px; font-weight:600; }
+    .btn-sync { margin-left:auto; background:var(--bg3); border:1px solid var(--border); color:var(--text); padding:4px 10px; border-radius:6px; cursor:pointer; font-size:12px; white-space:nowrap; }
+    .btn-sync:hover { background:var(--border); }
+    .btn-sync:disabled { opacity:.5; cursor:default; }
+    #syncStatus { padding:5px 20px; font-size:12px; background:var(--bg2); border-bottom:1px solid var(--border); display:none; flex-shrink:0; }
+    #syncStatus .sync-steps { display:flex; gap:16px; flex-wrap:wrap; }
+    #syncStatus .sync-step { display:flex; align-items:center; gap:5px; }
+    #syncStatus .sync-step .dot { width:7px; height:7px; border-radius:50%; background:var(--muted); }
+    #syncStatus .sync-step.running .dot { background:var(--blue); animation:pulse .8s infinite alternate; }
+    #syncStatus .sync-step.done .dot { background:var(--green); }
+    @keyframes pulse { from{opacity:.4} to{opacity:1} }
 
     /* Layout */
     .layout { display:flex; flex:1; overflow:hidden; }
@@ -345,6 +355,276 @@
     .group-item.drag-over-top    { border-top:2px solid var(--blue); }
     .group-item.drag-over-bottom { border-bottom:2px solid var(--blue); }
     .group-item.group-dragging   { opacity:.4; }
+
+    /* ── Supply Chain (Tech Feel) ── */
+    @keyframes sc-flow-dash {
+      0%   { background-position: 0 0; }
+      100% { background-position: 40px 0; }
+    }
+    @keyframes sc-pulse-glow {
+      0%, 100% { opacity: .55; }
+      50%       { opacity: 1; }
+    }
+    @keyframes sc-card-in {
+      from { opacity:0; transform: translateY(10px); }
+      to   { opacity:1; transform: translateY(0); }
+    }
+
+    /* Outer panel — dark with dot grid */
+    .sc-outer {
+      padding: 0 0 20px;
+      background: #0d1117;
+      border-radius: 12px;
+      border: 1px solid rgba(56,139,253,.18);
+      position: relative; overflow: hidden;
+    }
+    .sc-outer::before {
+      content: '';
+      position: absolute; inset: 0;
+      background-image: radial-gradient(circle, rgba(56,139,253,.12) 1px, transparent 1px);
+      background-size: 22px 22px;
+      pointer-events: none;
+    }
+
+    /* Top gradient accent line */
+    .sc-outer::after {
+      content: '';
+      position: absolute; top:0; left:0; right:0; height:2px;
+      background: linear-gradient(90deg, transparent 0%, #388bfd 30%, #bc8cff 60%, #3fb950 90%, transparent 100%);
+    }
+
+    .sc-header {
+      padding: 18px 20px 14px;
+      position: relative;
+      border-bottom: 1px solid rgba(56,139,253,.12);
+    }
+    .sc-title {
+      font-size: clamp(15px, 1.6vw, 18px); font-weight: 700; letter-spacing: .4px;
+      color: #e6edf3; margin-bottom: 5px;
+      display: flex; align-items: center; gap: 8px;
+    }
+    .sc-title::before {
+      content: '◈';
+      color: #388bfd; font-size: clamp(12px, 1.3vw, 15px);
+      animation: sc-pulse-glow 2.5s ease-in-out infinite;
+    }
+    .sc-subtitle { font-size: clamp(12px, 1.1vw, 13.5px); color: #7d8590; letter-spacing: .2px; }
+
+    .sc-scroll { overflow-x: auto; padding: 16px 20px 20px; }
+    .sc-scroll::-webkit-scrollbar { height: 5px; }
+    .sc-scroll::-webkit-scrollbar-track { background: rgba(255,255,255,.04); border-radius:3px; }
+    .sc-scroll::-webkit-scrollbar-thumb { background: rgba(56,139,253,.35); border-radius:3px; }
+
+    /* Flow fills available width; each node grows equally */
+    .sc-flow {
+      display: flex; align-items: stretch; gap: 0; width: 100%;
+    }
+
+    /* Animated arrow connector */
+    .sc-arrow {
+      display: flex; align-items: center; justify-content: center;
+      flex: 0 0 clamp(20px, 3%, 44px); padding: 0 2px; position: relative;
+    }
+    .sc-arrow-track {
+      flex: 1; height: 2px; position: relative; overflow: hidden;
+      background: rgba(255,255,255,.06); border-radius: 1px;
+    }
+    .sc-arrow-track::after {
+      content: '';
+      position: absolute; inset: 0;
+      background: repeating-linear-gradient(90deg,
+        transparent 0px, transparent 6px,
+        rgba(56,139,253,.7) 6px, rgba(56,139,253,.7) 14px,
+        transparent 14px, transparent 20px
+      );
+      background-size: 40px 2px;
+      animation: sc-flow-dash .8s linear infinite;
+    }
+    .sc-arrow-head {
+      color: rgba(56,139,253,.7); font-size: clamp(10px, 1.1vw, 13px);
+      margin-left: -3px; line-height: 1; flex-shrink: 0;
+    }
+
+    /* Each node fills equal space */
+    .sc-node {
+      flex: 1; min-width: 0;
+      display: flex; flex-direction: column;
+      animation: sc-card-in .35s ease both;
+    }
+    .sc-node:nth-child(1) { animation-delay: .00s; }
+    .sc-node:nth-child(3) { animation-delay: .06s; }
+    .sc-node:nth-child(5) { animation-delay: .12s; }
+    .sc-node:nth-child(7) { animation-delay: .18s; }
+    .sc-node:nth-child(9) { animation-delay: .24s; }
+
+    /* Stage badge — inline inside card at top so it always aligns */
+    .sc-pos-badge {
+      display: inline-flex; align-self: flex-start;
+      font-size: clamp(10px, 1vw, 12px); font-weight: 700; letter-spacing: .8px;
+      padding: 2px 10px; border-radius: 3px; margin-bottom: 2px;
+    }
+    .sc-pos-badge.sc-up   { background:rgba(210,153,34,.18); color:#d29922; border:1px solid rgba(210,153,34,.38); }
+    .sc-pos-badge.sc-mid  { background:rgba(56,139,253,.15); color:#388bfd; border:1px solid rgba(56,139,253,.38); }
+    .sc-pos-badge.sc-down { background:rgba(63,185,80,.14);  color:#3fb950; border:1px solid rgba(63,185,80,.38); }
+    .sc-pos-badge.sc-app  { background:rgba(188,140,255,.14);color:#bc8cff; border:1px solid rgba(188,140,255,.38);}
+
+    .sc-card {
+      flex: 1; border-radius: 8px; padding: clamp(12px,1.5vw,18px) clamp(12px,1.5vw,18px) clamp(10px,1.2vw,16px);
+      display: flex; flex-direction: column; gap: clamp(7px,1vw,10px);
+      background: rgba(22,27,34,.9);
+      border: 1px solid rgba(255,255,255,.07);
+      position: relative; overflow: hidden;
+      transition: border-color .2s, box-shadow .2s;
+    }
+    /* Top accent bar */
+    .sc-card::before {
+      content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px;
+    }
+    .sc-card:hover { border-color: rgba(255,255,255,.15); }
+
+    .sc-card-title {
+      font-size: clamp(13px, 1.3vw, 15px); font-weight: 700;
+      color: #e6edf3; letter-spacing: .2px;
+    }
+    .sc-card-desc {
+      font-size: clamp(12px, 1.1vw, 13.5px); color: #7d8590;
+      white-space: pre-line; line-height: 1.65;
+    }
+    .sc-tags { display: flex; flex-wrap: wrap; gap: 4px; }
+    .sc-tag  {
+      font-size: clamp(10px, .95vw, 12px); padding: 2px 7px; border-radius: 3px;
+      background: rgba(255,255,255,.05); border: 1px solid rgba(255,255,255,.1);
+      color: #7d8590; font-family: ui-monospace, monospace; letter-spacing: .3px;
+    }
+    .sc-stocks {
+      display: flex; flex-wrap: wrap; gap: 5px;
+      padding-top: 8px; border-top: 1px solid rgba(255,255,255,.06);
+    }
+    .sc-no-stock {
+      font-size: clamp(11px, 1vw, 12px); color: rgba(255,255,255,.22);
+      padding-top: 8px; border-top: 1px solid rgba(255,255,255,.06);
+      letter-spacing: .3px;
+    }
+    .sc-chip {
+      font-size: clamp(11px, 1.05vw, 13px); padding: 3px 10px;
+      border-radius: 4px; cursor: pointer;
+      background: rgba(56,139,253,.1); border: 1px solid rgba(56,139,253,.22);
+      color: #7db9f0; white-space: nowrap;
+      transition: background .15s, border-color .15s, color .15s, box-shadow .15s;
+      font-family: ui-monospace, monospace;
+    }
+    .sc-chip:hover {
+      background: rgba(56,139,253,.25); border-color: rgba(56,139,253,.6);
+      color: #a5caff; box-shadow: 0 0 8px rgba(56,139,253,.35);
+    }
+
+    /* Stage colour vars */
+    --sc-clr-up:   #d29922;
+    --sc-clr-mid:  #388bfd;
+    --sc-clr-down: #3fb950;
+    --sc-clr-app:  #bc8cff;
+
+    /* Stage: upper */
+    .sc-card.sc-up {
+      border-color: rgba(210,153,34,.22);
+      box-shadow: 0 0 18px rgba(210,153,34,.07);
+    }
+    .sc-card.sc-up::before  { background: linear-gradient(90deg, #d29922, rgba(210,153,34,.2)); }
+    .sc-card.sc-up:hover    { box-shadow: 0 0 24px rgba(210,153,34,.2); border-color: rgba(210,153,34,.45); }
+
+    /* Stage: middle */
+    .sc-card.sc-mid {
+      border-color: rgba(56,139,253,.22);
+      box-shadow: 0 0 18px rgba(56,139,253,.07);
+    }
+    .sc-card.sc-mid::before { background: linear-gradient(90deg, #388bfd, rgba(56,139,253,.2)); }
+    .sc-card.sc-mid:hover   { box-shadow: 0 0 24px rgba(56,139,253,.22); border-color: rgba(56,139,253,.45); }
+
+    /* Stage: downstream */
+    .sc-card.sc-down {
+      border-color: rgba(63,185,80,.22);
+      box-shadow: 0 0 18px rgba(63,185,80,.07);
+    }
+    .sc-card.sc-down::before{ background: linear-gradient(90deg, #3fb950, rgba(63,185,80,.2)); }
+    .sc-card.sc-down:hover  { box-shadow: 0 0 24px rgba(63,185,80,.2); border-color: rgba(63,185,80,.45); }
+
+    /* Stage: application */
+    .sc-card.sc-app {
+      border-color: rgba(188,140,255,.22);
+      box-shadow: 0 0 18px rgba(188,140,255,.07);
+    }
+    .sc-card.sc-app::before { background: linear-gradient(90deg, #bc8cff, rgba(188,140,255,.2)); }
+    .sc-card.sc-app:hover   { box-shadow: 0 0 24px rgba(188,140,255,.2); border-color: rgba(188,140,255,.45); }
+
+    /* ── Panel Tabs ── */
+    .panel-tabs { display:flex; gap:2px; margin-bottom:0; border-bottom:1px solid var(--border); }
+    .panel-tab {
+      padding:7px 18px; font-size:13px; border-radius:6px 6px 0 0;
+      border:1px solid transparent; background:none;
+      color:var(--muted); cursor:pointer; font-family:inherit;
+      border-bottom:none; position:relative; top:1px;
+    }
+    .panel-tab.active { background:var(--bg2); border-color:var(--border); border-bottom-color:var(--bg2); color:var(--text); font-weight:600; }
+    .panel-tab:hover:not(.active) { color:var(--text); }
+
+    /* ── Industry Map ── */
+    .map-view { padding-top:20px; }
+    .map-title { font-size:16px; font-weight:700; color:var(--blue); margin-bottom:20px; }
+    .map-layer { margin-bottom:28px; }
+    .map-layer-name {
+      font-size:12px; font-weight:600; color:var(--muted);
+      letter-spacing:.8px; margin-bottom:12px;
+      display:flex; align-items:center; gap:10px;
+    }
+    .map-layer-name::after { content:''; flex:1; height:1px; background:var(--border); }
+
+    /* Flow layer (vertical chain) */
+    .map-flow { display:flex; align-items:flex-start; flex-wrap:wrap; gap:0; }
+    .map-flow-node {
+      background:var(--bg2); border:1px solid var(--border);
+      border-radius:8px; padding:10px 14px; min-width:120px; text-align:center;
+    }
+    .map-flow-node.c-red    { border-color:#da3633; }
+    .map-flow-node.c-orange { border-color:#d29922; }
+    .map-flow-node.c-blue   { border-color:#388bfd; }
+    .map-flow-arrow { color:var(--muted); font-size:16px; padding:8px 6px; line-height:1; flex-shrink:0; }
+    .map-flow-lbl  { font-size:13px; font-weight:600; margin-bottom:3px; }
+    .map-flow-desc { font-size:11px; color:var(--muted); white-space:pre-line; line-height:1.5; }
+
+    /* Compare layer (side-by-side columns) */
+    .map-compare { display:grid; grid-template-columns:repeat(auto-fill,minmax(190px,1fr)); gap:12px; }
+    .map-compare-node {
+      background:var(--bg2); border:1px solid var(--border);
+      border-radius:10px; padding:16px;
+    }
+    .map-compare-node.c-blue  { border-color:#388bfd; background:rgba(31,111,235,.05); }
+    .map-compare-node.c-green { border-color:#3fb950; background:rgba(63,185,80,.04); }
+    .map-cmp-icon  { font-size:24px; margin-bottom:8px; }
+    .map-cmp-label { font-size:15px; font-weight:700; margin-bottom:6px; }
+    .map-cmp-desc  { font-size:12px; color:var(--muted); white-space:pre-line; line-height:1.6; margin-bottom:8px; }
+    .map-cmp-spec  { font-size:11px; background:var(--bg3); border-radius:4px; padding:3px 8px; display:inline-block; margin-bottom:4px; }
+    .map-cmp-pue   { font-size:11px; color:var(--green); font-weight:600; margin-bottom:10px; display:block; }
+
+    /* Components layer (grid) */
+    .map-components { display:grid; grid-template-columns:repeat(auto-fill,minmax(175px,1fr)); gap:10px; }
+    .map-comp-node {
+      background:var(--bg2); border:1px solid var(--border);
+      border-radius:8px; padding:12px 14px;
+    }
+    .map-comp-head { display:flex; align-items:center; gap:8px; margin-bottom:5px; }
+    .map-comp-icon  { font-size:18px; }
+    .map-comp-label { font-size:13px; font-weight:600; }
+    .map-comp-desc  { font-size:11px; color:var(--muted); white-space:pre-line; line-height:1.5; margin-bottom:8px; }
+
+    /* Stock chips (shared in map) */
+    .map-chips { display:flex; flex-wrap:wrap; gap:4px; margin-top:6px; }
+    .map-chip {
+      font-size:11px; padding:2px 8px; border-radius:12px;
+      background:var(--bg3); border:1px solid var(--border);
+      color:var(--text); cursor:pointer; white-space:nowrap;
+      transition:border-color .1s, color .1s;
+    }
+    .map-chip:hover { border-color:var(--blue); color:var(--blue); }
   </style>
 </head>
 <body>
@@ -352,7 +632,9 @@
 <div class="topbar">
   <a href="/">← 台股分析系統</a>
   <span class="topbar-title">產業分類</span>
+  <button class="btn-sync" id="syncBtn" onclick="syncAll()">↻ 同步資料</button>
 </div>
+<div id="syncStatus"></div>
 
 <div class="layout">
   <!-- Left tree -->
@@ -594,24 +876,118 @@ function selectSub(subObj, skipLoad) {
   if (!skipLoad) loadStocks();
 }
 
+/* ══════════════════════════════
+   Built-in Industry Chain Maps
+══════════════════════════════ */
+const INDUSTRY_MAPS = {
+  '散熱': {
+    title: '散熱產業鏈',
+    subtitle: 'AI 伺服器熱管理：從晶片到機房的完整散熱路徑',
+    chain: [
+      {
+        pos: '上游', title: 'TIM 導熱材料', key: 'TIM',
+        desc: '晶片與散熱蓋間的介面材料\n從導熱膏演進到液態金屬\n導熱係數：矽脂 ~5 → 液態金屬 ~70 W/mK',
+        tags: ['導熱膏', '液態金屬', '石墨片'],
+        ref: []
+      },
+      {
+        pos: '中游', title: '均熱板 Vapor Chamber', key: '均熱板',
+        desc: '二維平面相變化均熱元件\n內部真空腔體，工作液體蒸發冷凝循環\n等效導熱係數為銅的 10～100 倍',
+        tags: ['VC 均熱板', '熱管 Heat Pipe', '均溫板'],
+        ref: [{id:'3653',name:'健策'},{id:'3324',name:'雙鴻'},{id:'3017',name:'奇鋐'},{id:'6230',name:'超眾'}]
+      },
+      {
+        pos: '中游', title: '冷板 + CDU 液冷模組', key: '冷板',
+        desc: '銅/鋁製微流道冷板直接帶走熱\nCDU 控制冷卻液流量與溫度\n水比熱是空氣 3400 倍，PUE 降至 1.1～1.2',
+        tags: ['Cold Plate', 'CDU', 'Manifold', '管路接頭'],
+        ref: [{id:'3324',name:'雙鴻'},{id:'3017',name:'奇鋐'}]
+      },
+      {
+        pos: '下游', title: '浸沒式冷卻系統', key: '浸沒',
+        desc: '整台伺服器浸泡於電子冷卻液中\n單相／雙相皆可，PUE 趨近 1.0\n無需風扇，元件壽命延長',
+        tags: ['單相浸沒', '雙相浸沒', '氟化液', '礦物油'],
+        ref: [{id:'6125',name:'廣運'}]
+      },
+      {
+        pos: '下游', title: '風扇 / 系統熱管理', key: '風扇',
+        desc: '伺服器高轉速散熱風扇\n電源模組整合熱管理\nPUE 1.4～1.6（風冷機房）',
+        tags: ['Server Fan', 'PSU', 'CRAC', 'CRAH'],
+        ref: [{id:'2421',name:'建準'},{id:'2308',name:'台達電'}]
+      },
+    ]
+  },
+  '光通訊': {
+    title: '光通訊產業鏈',
+    subtitle: 'AI 叢集高速光互連：從光源到網路交換的完整供應鏈',
+    chain: [
+      {
+        pos: '上游', title: '發光元件', key: '發光',
+        desc: 'VCSEL：短距離高速並行傳輸\nDFB 雷射：長距離單模傳輸\nEML：100G+ 高速調變',
+        tags: ['VCSEL', 'DFB 雷射', 'EML', 'InP 晶片'],
+        ref: [{id:'3308',name:'聯亞'},{id:'2706',name:'光磊'}]
+      },
+      {
+        pos: '中游', title: '光學被動元件', key: '光學',
+        desc: 'WDM 濾波器整合多波長\n準直器、隔離器、分路器\n精密光學鍍膜製程',
+        tags: ['WDM Filter', 'PLC 分路器', '準直器', '隔離器'],
+        ref: [{id:'3450',name:'聯鈞'}]
+      },
+      {
+        pos: '中游', title: '矽光子 / 光學引擎', key: '矽光子',
+        desc: 'Co-Packaged Optics（CPO）\n光電整合封裝於同一基板\n大幅降低功耗與延遲',
+        tags: ['矽光子', 'CPO', 'LPO', '光學引擎'],
+        ref: []
+      },
+      {
+        pos: '下游', title: '光收發模組', key: '收發',
+        desc: '800G QSFP-DD 為 AI 主流\n1.6T 下一世代標準\nAOC 主動光纜用於機架內',
+        tags: ['800G QSFP-DD', '400G ZR', 'AOC', 'DAC'],
+        ref: [{id:'6442',name:'光聖'},{id:'3169',name:'亞信'}]
+      },
+      {
+        pos: '應用', title: '交換器 / AI 網路', key: '交換',
+        desc: 'Scale-up：GPU 間 NVLink/InfiniBand\nScale-out：機架間 Ethernet AI Fabric\nSpine-Leaf 拓撲為主流',
+        tags: ['InfiniBand', 'Ethernet', 'Spine-Leaf', 'DCI'],
+        ref: []
+      },
+    ]
+  },
+};
+
+function findIndustryMap(name) {
+  if (!name) return null;
+  for (const [key, map] of Object.entries(INDUSTRY_MAPS)) {
+    if (name.includes(key)) return map;
+  }
+  return null;
+}
+
+/* ══════════════════════════════
+   Panel tab state
+══════════════════════════════ */
 function renderPanel() {
   document.getElementById('emptyState').style.display = 'none';
   const panel = document.getElementById('subgroupPanel');
   panel.style.display = 'block';
-  const group = tree.find(g => g.subgroups.some(s => s.id === currentSub.id));
+  const group     = tree.find(g => g.subgroups.some(s => s.id === currentSub.id));
+  const chainData = findIndustryMap(currentSub.name);
+  const hasChain  = !!chainData;
+  const cleanDesc = (currentSub.description||'').replace(/<!--[\s\S]*?-->/g, '').trim();
+
   panel.innerHTML = `
     <div class="breadcrumb">${esc(group?.name||'')} &rsaquo; <span>${esc(currentSub.name)}</span></div>
-
     <div class="sg-title-row">
       <div class="sg-title" ondblclick="editPanelTitle()">${esc(currentSub.name)}</div>
     </div>
+
+    ${hasChain ? `<div id="chainContent" class="sc-outer"></div>` : ''}
 
     <div class="desc-section">
       <div class="desc-toolbar">
         <button class="desc-btn" id="editDescBtn" onclick="toggleEditDesc()">✏ 編輯介紹</button>
       </div>
-      <div id="descView" class="desc-rendered ${currentSub.description ? '' : 'empty'}">
-        ${currentSub.description ? marked.parse(currentSub.description) : '（尚無介紹，點「編輯介紹」新增）'}
+      <div id="descView" class="desc-rendered ${cleanDesc?'':'empty'}">
+        ${cleanDesc ? marked.parse(cleanDesc) : '（尚無介紹，點「編輯介紹」新增）'}
       </div>
       <div id="descEdit" style="display:none">
         <textarea class="desc-textarea" id="descTextarea" placeholder="支援 Markdown 格式...">${esc(currentSub.description||'')}</textarea>
@@ -638,6 +1014,66 @@ function renderPanel() {
         <span class="add-stock-err" id="addStockErr"></span>
       </div>
     </div>
+  `;
+
+  if (hasChain) renderSupplyChain(document.getElementById('chainContent'), chainData);
+}
+
+/* ══════════════════════════════
+   Supply Chain Renderer
+══════════════════════════════ */
+function renderSupplyChain(container, data) {
+  if (!container) return;
+  const POS_CLS = { '上游':'sc-up', '中游':'sc-mid', '下游':'sc-down', '應用':'sc-app' };
+
+  // 找出某個 node.key 對應的 section，回傳該 section 的股票陣列
+  // 若找到 section（即使空的）就用 section 資料；找不到才用 ref 預設值
+  function getNodeStocks(node) {
+    if (!node.key || !currentSections.length) return { stocks: node.ref||[], fromSection: false };
+    const sec = currentSections.find(s => s.name && (
+      s.name.includes(node.key) || node.key.includes(s.name)
+    ));
+    if (!sec) return { stocks: node.ref||[], fromSection: false };
+    const sStocks = currentStocks.filter(s => s.section_id === sec.id)
+      .map(s => ({ id: s.stock_id, name: s.stock_name||s.stock_id }));
+    return { stocks: sStocks, fromSection: true };
+  }
+
+  const chipHtml = (stocks) => stocks.map(s =>
+    `<span class="sc-chip" onclick="window.open('/chart.html?stock=${s.id}','_blank')">${s.id} ${esc(s.name)}</span>`
+  ).join('');
+
+  const tagHtml = (tags) => tags.map(t =>
+    `<span class="sc-tag">${esc(t)}</span>`
+  ).join('');
+
+  let nodes = '';
+  data.chain.forEach((node, i) => {
+    const cls = POS_CLS[node.pos] || 'sc-mid';
+    const { stocks, fromSection } = getNodeStocks(node);
+    const stocksHtml = stocks.length
+      ? `<div class="sc-stocks">${chipHtml(stocks)}</div>`
+      : `<div class="sc-no-stock">${fromSection ? '此分類尚無股票' : '— 尚無對應股票'}</div>`;
+
+    nodes += `
+      ${i > 0 ? `<div class="sc-arrow"><div class="sc-arrow-track"></div><span class="sc-arrow-head">▶</span></div>` : ''}
+      <div class="sc-node">
+        <div class="sc-card ${cls}">
+          <div class="sc-pos-badge ${cls}">${esc(node.pos)}</div>
+          <div class="sc-card-title">${esc(node.title)}</div>
+          <div class="sc-card-desc">${esc(node.desc)}</div>
+          ${node.tags?.length ? `<div class="sc-tags">${tagHtml(node.tags)}</div>` : ''}
+          ${stocksHtml}
+        </div>
+      </div>`;
+  });
+
+  container.innerHTML = `
+    <div class="sc-header">
+      <div class="sc-title">${esc(data.title)}</div>
+      <div class="sc-subtitle">${esc(data.subtitle)}</div>
+    </div>
+    <div class="sc-scroll"><div class="sc-flow">${nodes}</div></div>
   `;
 }
 
@@ -683,13 +1119,8 @@ async function saveDesc() {
     body:JSON.stringify({name: currentSub.name, description: md})
   });
   editingDesc = false;
-  const view = document.getElementById('descView');
-  view.innerHTML = md ? marked.parse(md) : '（尚無介紹，點「編輯介紹」新增）';
-  view.className = `desc-rendered ${md ? '' : 'empty'}`;
-  document.getElementById('descEdit').style.display = 'none';
-  document.getElementById('descView').style.display = 'block';
-  document.getElementById('editDescBtn').textContent = '✏ 編輯介紹';
   await loadTree();
+  loadStocks();
 }
 
 /* ══════════════════════════════
@@ -710,6 +1141,10 @@ async function loadStocks() {
   if (wj.success) currentStocks   = wj.data;
   renderSections();
   currentStocks.forEach(s => loadScore(s.stock_id));
+  // 重繪產業結構圖（以填入 section 對應股票）
+  const _chainData = findIndustryMap(currentSub?.name);
+  const _chainEl   = document.getElementById('chainContent');
+  if (_chainData && _chainEl) renderSupplyChain(_chainEl, _chainData);
 }
 
 /* ─── Render all sections + uncategorized ─── */
@@ -961,6 +1396,56 @@ async function reorderGroup(srcId, targetId, before) {
     method:'PUT', headers:{'Content-Type':'application/json'},
     body: JSON.stringify({ order })
   });
+}
+
+async function syncAll() {
+  const btn = document.getElementById('syncBtn');
+  const st  = document.getElementById('syncStatus');
+  const STEPS = [
+    { key:'prices',        label:'股價' },
+    { key:'institutional', label:'法人' },
+    { key:'margin',        label:'融資券' },
+    { key:'indicators',    label:'技術指標' },
+  ];
+  btn.disabled = true; btn.textContent = '↻ 同步中...';
+  st.style.display = 'block';
+  st.innerHTML = '<div class="sync-steps">' +
+    STEPS.map(s => `<div class="sync-step" id="ss_${s.key}"><div class="dot"></div><span>${s.label}</span></div>`).join('') +
+  '</div>';
+  const setStep = (key, cls, label) => {
+    const el = document.getElementById('ss_' + key);
+    if (!el) return;
+    el.className = 'sync-step ' + cls;
+    el.querySelector('span').textContent = label;
+  };
+  try {
+    const res = await fetch('/api/admin/sync', { method: 'POST' });
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = '';
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      const parts = buf.split('\n\n');
+      buf = parts.pop();
+      for (const part of parts) {
+        const line = part.replace(/^data: /, '').trim();
+        if (!line) continue;
+        try {
+          const d = JSON.parse(line);
+          if (d.error) { st.innerHTML = `<span style="color:var(--red)">✗ ${d.error}</span>`; return; }
+          if (d.step && d.status === 'start') setStep(d.step, 'running', d.msg || STEPS.find(s=>s.key===d.step)?.label);
+          if (d.step && d.status === 'done')  setStep(d.step, 'done', d.msg || '✓');
+        } catch(_) {}
+      }
+    }
+  } catch(e) {
+    st.innerHTML = `<span style="color:var(--red)">✗ ${e.message}</span>`;
+  } finally {
+    btn.disabled = false; btn.textContent = '↻ 同步資料';
+    setTimeout(() => st.style.display = 'none', 10000);
+  }
 }
 </script>
 <script src="/chat.js"></script>
