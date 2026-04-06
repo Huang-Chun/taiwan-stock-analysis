@@ -1,7 +1,89 @@
 const express = require('express');
 const { pool } = require('../database/connection');
 const path = require('path');
+const fs = require('fs').promises;
 require('dotenv').config();
+
+// ── Sectors snapshot ──────────────────────────────────────────────
+const SECTORS_FILE = path.join(__dirname, '../../data/sectors.json');
+
+async function saveSectorsSnapshot() {
+  const [groups]   = await pool.query('SELECT * FROM sector_groups ORDER BY sort_order, id');
+  const [subs]     = await pool.query('SELECT * FROM sector_subgroups ORDER BY sort_order, id');
+  const [sections] = await pool.query('SELECT * FROM sector_stock_sections ORDER BY sort_order, id');
+  const [stocks]   = await pool.query('SELECT * FROM sector_stocks ORDER BY sort_order, stock_id');
+
+  const data = groups.map(g => ({
+    name: g.name,
+    sort_order: g.sort_order,
+    subgroups: subs.filter(s => s.group_id === g.id).map(s => ({
+      name: s.name,
+      description: s.description,
+      sort_order: s.sort_order,
+      sections: sections.filter(sec => sec.subgroup_id === s.id).map(sec => ({
+        name: sec.name,
+        sort_order: sec.sort_order,
+      })),
+      stocks: stocks.filter(st => st.subgroup_id === s.id).map(st => {
+        const sec = sections.find(sec => sec.id === st.section_id);
+        return { stock_id: st.stock_id, section_name: sec ? sec.name : null, sort_order: st.sort_order };
+      }),
+    })),
+  }));
+
+  await fs.mkdir(path.dirname(SECTORS_FILE), { recursive: true });
+  await fs.writeFile(SECTORS_FILE, JSON.stringify({ exported_at: new Date().toISOString(), groups: data }, null, 2));
+}
+
+async function autoImportSectorsIfEmpty() {
+  // sectors.json 是唯一真相來源，存在就全量同步進 DB
+  let raw;
+  try { raw = await fs.readFile(SECTORS_FILE, 'utf8'); }
+  catch (e) { return; } // 檔案不存在，不動 DB
+
+  try {
+    const { groups } = JSON.parse(raw);
+    if (!groups || !groups.length) return;
+
+    // 清空舊資料（FK cascade 會連帶刪 subgroups/stocks/sections）
+    await pool.query('DELETE FROM sector_groups');
+
+    for (const g of groups) {
+      const [gr] = await pool.query(
+        'INSERT INTO sector_groups (name, sort_order) VALUES (?,?)', [g.name, g.sort_order ?? 0]
+      );
+      const groupId = gr.insertId;
+
+      for (const s of (g.subgroups || [])) {
+        const [sr] = await pool.query(
+          'INSERT INTO sector_subgroups (group_id, name, description, sort_order) VALUES (?,?,?,?)',
+          [groupId, s.name, s.description || '', s.sort_order ?? 0]
+        );
+        const subId = sr.insertId;
+        const sectionMap = {};
+
+        for (const sec of (s.sections || [])) {
+          const [secr] = await pool.query(
+            'INSERT INTO sector_stock_sections (subgroup_id, name, sort_order) VALUES (?,?,?)',
+            [subId, sec.name, sec.sort_order ?? 0]
+          );
+          sectionMap[sec.name] = secr.insertId;
+        }
+
+        for (const st of (s.stocks || [])) {
+          const secId = st.section_name ? (sectionMap[st.section_name] ?? null) : null;
+          await pool.query(
+            'INSERT IGNORE INTO sector_stocks (subgroup_id, stock_id, section_id, sort_order) VALUES (?,?,?,?)',
+            [subId, st.stock_id, secId, st.sort_order ?? 0]
+          );
+        }
+      }
+    }
+    console.log(`[Sectors] 從 sectors.json 同步完成`);
+  } catch (e) {
+    console.error('[Sectors] 同步失敗:', e.message);
+  }
+}
 
 const Anthropic = require('@anthropic-ai/sdk');
 
@@ -567,6 +649,18 @@ app.get('/api/health', async (req, res) => {
 
 // ── Sectors ──────────────────────────────────────────────────
 
+// 寫入後自動儲存 snapshot
+app.use('/api/sectors', (req, res, next) => {
+  if (['POST', 'PUT', 'DELETE'].includes(req.method)) {
+    const orig = res.json.bind(res);
+    res.json = (data) => {
+      orig(data);
+      if (data && data.success) saveSectorsSnapshot().catch(e => console.error('[Sectors] snapshot 失敗:', e.message));
+    };
+  }
+  next();
+});
+
 // GET all groups with subgroups
 app.get('/api/sectors', async (req, res) => {
   try {
@@ -742,101 +836,7 @@ app.put('/api/sectors/subgroups/:sid/stocks/:stockId/section', async (req, res) 
   } catch (e) { res.status(500).json({ success: false, error: e.message }); }
 });
 
-// ============================================
-// 首頁
-// ============================================
-
-app.get('/', (req, res) => {
-  res.send(`
-    <!DOCTYPE html>
-    <html lang="zh-TW">
-    <head>
-      <meta charset="UTF-8">
-      <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <title>台股分析系統</title>
-      <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body {
-          font-family: 'Microsoft JhengHei', Arial, sans-serif;
-          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-          min-height: 100vh;
-          padding: 20px;
-        }
-        .container { max-width: 1200px; margin: 0 auto; }
-        .header {
-          background: white; padding: 30px; border-radius: 15px;
-          box-shadow: 0 10px 30px rgba(0,0,0,0.2); margin-bottom: 30px; text-align: center;
-        }
-        h1 { color: #667eea; margin-bottom: 10px; }
-        .card {
-          background: white; padding: 25px; border-radius: 15px;
-          box-shadow: 0 10px 30px rgba(0,0,0,0.2); margin-bottom: 20px;
-        }
-        .card h2 { color: #333; margin-bottom: 15px; border-bottom: 2px solid #667eea; padding-bottom: 10px; }
-        .api-list { list-style: none; }
-        .api-list li {
-          padding: 12px; margin: 8px 0; background: #f8f9fa;
-          border-left: 4px solid #667eea; border-radius: 5px; font-family: 'Courier New', monospace;
-        }
-        .method { color: #28a745; font-weight: bold; margin-right: 10px; }
-        .description { color: #6c757d; font-size: 14px; margin-top: 5px; }
-        .button {
-          display: inline-block; padding: 12px 24px; background: #667eea; color: white;
-          text-decoration: none; border-radius: 8px; margin: 10px 5px; transition: all 0.3s;
-        }
-        .button:hover { background: #764ba2; transform: translateY(-2px); }
-        .status { display: inline-block; padding: 5px 15px; border-radius: 20px; font-size: 14px; font-weight: bold; }
-        .status.online { background: #d4edda; color: #155724; }
-        .section-label { display: inline-block; padding: 3px 10px; border-radius: 12px; font-size: 12px; font-weight: bold; margin-left: 8px; }
-        .label-tech { background: #e3f2fd; color: #1565c0; }
-        .label-chip { background: #fff3e0; color: #e65100; }
-        .label-fund { background: #e8f5e9; color: #2e7d32; }
-      </style>
-    </head>
-    <body>
-      <div class="container">
-        <div class="header">
-          <h1>台股分析系統 v2.0</h1>
-          <p style="color: #666;">Taiwan Stock Analysis System - Technical / Institutional / Fundamental</p>
-          <p style="margin-top: 10px;"><span class="status online">系統運行中</span></p>
-        </div>
-
-        <div class="card">
-          <h2>API Endpoints</h2>
-          <ul class="api-list">
-            <li><span class="method">GET</span>/api/stocks<div class="description">股票清單（?keyword=台積電）</div></li>
-            <li><span class="method">GET</span>/api/stocks/:id<div class="description">股票詳情</div></li>
-            <li><span class="method">GET</span>/api/stocks/:id/prices<div class="description">歷史股價（?limit=30）</div></li>
-            <li><span class="method">GET</span>/api/stocks/:id/latest<div class="description">最新股價+全部技術指標</div></li>
-            <li><span class="method">GET</span>/api/stocks/:id/signals <span class="section-label label-tech">技術面</span><div class="description">交易訊號偵測</div></li>
-            <li><span class="method">GET</span>/api/stocks/:id/score <span class="section-label label-tech">技術面</span><span class="section-label label-fund">基本面</span><div class="description">綜合評分（0-100）</div></li>
-            <li><span class="method">GET</span>/api/stocks/:id/institutional <span class="section-label label-chip">籌碼面</span><div class="description">法人買賣超趨勢</div></li>
-            <li><span class="method">GET</span>/api/stocks/:id/margin <span class="section-label label-chip">籌碼面</span><div class="description">融資融券分析</div></li>
-            <li><span class="method">GET</span>/api/stocks/:id/revenue <span class="section-label label-fund">基本面</span><div class="description">月營收趨勢</div></li>
-            <li><span class="method">GET</span>/api/stocks/:id/financial <span class="section-label label-fund">基本面</span><div class="description">財報摘要</div></li>
-            <li><span class="method">GET</span>/api/stocks/:id/valuation <span class="section-label label-fund">基本面</span><div class="description">估值指標（PE/PB/殖利率）</div></li>
-            <li><span class="method">GET</span>/api/analysis/screen<div class="description">技術指標篩選（rsi_min, rsi_max, ma_position, volume_min, kd_golden_cross, macd_positive, adx_min）</div></li>
-            <li><span class="method">GET</span>/api/analysis/screen/strategy/:name<div class="description">策略篩選（golden_cross, rsi_oversold, macd_golden_cross, volume_breakout, bollinger_squeeze）</div></li>
-            <li><span class="method">GET</span>/api/analysis/screen/institutional <span class="section-label label-chip">籌碼面</span><div class="description">法人篩選（foreign_net_min, trust_net_min, days）</div></li>
-          </ul>
-        </div>
-
-        <div class="card">
-          <h2>Quick Links</h2>
-          <a href="/chart.html" class="button">📈 K 線圖</a>
-          <a href="/sectors.html" class="button">🗂 產業分類</a>
-          <a href="/api/stocks/2330/latest" class="button">台積電最新</a>
-          <a href="/api/stocks/2330/signals" class="button">台積電訊號</a>
-          <a href="/api/stocks/2330/score" class="button">台積電評分</a>
-          <a href="/api/analysis/screen?rsi_max=30" class="button">RSI&lt;30</a>
-          <a href="/api/analysis/screen/strategy/golden_cross" class="button">黃金交叉</a>
-          <a href="/api/health" class="button">健康檢查</a>
-        </div>
-      </div>
-    </body>
-    </html>
-  `);
-});
+// 首頁由 public/index.html 靜態服務
 
 // ============================================
 // AI 分析 API (streaming via SSE)
@@ -1174,10 +1174,11 @@ ${contextDesc}
   }
 });
 
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
   console.log(`\n台股分析系統 v2.0 啟動成功！`);
   console.log(`網址: http://localhost:${PORT}`);
   console.log(`按 Ctrl+C 停止伺服器\n`);
+  await autoImportSectorsIfEmpty();
 });
 
 module.exports = app;

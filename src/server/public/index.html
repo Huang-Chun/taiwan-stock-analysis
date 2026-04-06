@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>台股分析系統</title>
+<style>
+*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Microsoft JhengHei', sans-serif;
+  min-height: 100vh;
+  background: #0a0f1e;
+  color: #e8edf5;
+  overflow-x: hidden;
+}
+
+/* ── Background ── */
+.bg {
+  position: fixed; inset: 0; z-index: 0;
+  background: url('michael_stock_background.webp') center/cover no-repeat;
+}
+.bg-overlay {
+  position: fixed; inset: 0; z-index: 1;
+  background: linear-gradient(
+    to bottom,
+    rgba(5, 10, 28, 0.55) 0%,
+    rgba(5, 10, 28, 0.70) 50%,
+    rgba(5, 10, 28, 0.88) 100%
+  );
+}
+
+/* ── Layout ── */
+.page {
+  position: relative; z-index: 2;
+  min-height: 100vh;
+  display: flex; flex-direction: column; align-items: center;
+  padding: 0 20px 60px;
+}
+
+/* ── Hero ── */
+.hero {
+  text-align: center;
+  padding: 90px 0 56px;
+}
+.hero-badge {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: rgba(255,255,255,0.08);
+  border: 1px solid rgba(255,255,255,0.15);
+  border-radius: 20px;
+  padding: 5px 14px; font-size: 12px; color: #a8bfd8;
+  margin-bottom: 24px; backdrop-filter: blur(8px);
+  letter-spacing: 0.05em; text-transform: uppercase;
+}
+.hero-badge .dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: #4ade80;
+  box-shadow: 0 0 6px #4ade80;
+  animation: pulse 2s ease-in-out infinite;
+}
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+
+.hero h1 {
+  font-size: clamp(36px, 6vw, 64px);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+  background: linear-gradient(135deg, #ffffff 0%, #b8d4f0 60%, #7eb8e8 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  margin-bottom: 16px;
+}
+.hero-sub {
+  font-size: clamp(14px, 2vw, 17px);
+  color: #8aa5c0;
+  max-width: 520px;
+  margin: 0 auto 36px;
+  line-height: 1.6;
+}
+.hero-stats {
+  display: flex; justify-content: center; gap: 40px;
+  flex-wrap: wrap;
+}
+.stat {
+  text-align: center;
+}
+.stat-num {
+  font-size: 26px; font-weight: 700;
+  color: #fff;
+  line-height: 1;
+}
+.stat-label {
+  font-size: 12px; color: #6a8aaa;
+  margin-top: 4px; letter-spacing: 0.04em;
+}
+
+/* ── Feature Grid ── */
+.grid-title {
+  font-size: 11px; font-weight: 700; color: #5a7a9a;
+  text-transform: uppercase; letter-spacing: 0.1em;
+  margin-bottom: 20px; text-align: center;
+}
+
+.features {
+  width: 100%; max-width: 960px;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+}
+
+.card {
+  position: relative;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.10);
+  border-radius: 16px;
+  padding: 28px 24px;
+  text-decoration: none; color: inherit;
+  backdrop-filter: blur(16px);
+  transition: transform 0.2s ease, background 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+  overflow: hidden;
+  cursor: pointer;
+}
+.card::before {
+  content: '';
+  position: absolute; inset: 0;
+  border-radius: 16px;
+  background: linear-gradient(135deg, rgba(255,255,255,0.06) 0%, transparent 60%);
+  pointer-events: none;
+}
+.card:hover {
+  transform: translateY(-4px);
+  background: rgba(255,255,255,0.10);
+  border-color: rgba(255,255,255,0.22);
+  box-shadow: 0 16px 40px rgba(0,0,0,0.4), 0 0 0 1px rgba(255,255,255,0.08);
+}
+
+.card-icon {
+  width: 44px; height: 44px;
+  border-radius: 12px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 22px;
+  margin-bottom: 16px;
+}
+.card-title {
+  font-size: 17px; font-weight: 700;
+  color: #e8edf5;
+  margin-bottom: 8px;
+}
+.card-desc {
+  font-size: 13px; color: #7a9ab8;
+  line-height: 1.6;
+}
+.card-arrow {
+  position: absolute; right: 20px; bottom: 22px;
+  font-size: 16px; color: rgba(255,255,255,0.2);
+  transition: color 0.2s, transform 0.2s;
+}
+.card:hover .card-arrow {
+  color: rgba(255,255,255,0.5);
+  transform: translateX(3px);
+}
+
+/* Card accent colors */
+.card.chart   .card-icon { background: rgba(56, 189, 248, 0.15); }
+.card.screen  .card-icon { background: rgba(168, 85, 247, 0.15); }
+.card.backtest .card-icon { background: rgba(249, 115, 22, 0.15); }
+.card.sectors .card-icon { background: rgba(20, 184, 166, 0.15); }
+.card.ai      .card-icon { background: rgba(234, 179, 8, 0.15); }
+.card.api     .card-icon { background: rgba(156, 163, 175, 0.15); }
+
+.card.chart:hover   { box-shadow: 0 16px 40px rgba(0,0,0,0.4), 0 0 24px rgba(56,189,248,0.08); }
+.card.screen:hover  { box-shadow: 0 16px 40px rgba(0,0,0,0.4), 0 0 24px rgba(168,85,247,0.08); }
+.card.backtest:hover{ box-shadow: 0 16px 40px rgba(0,0,0,0.4), 0 0 24px rgba(249,115,22,0.08); }
+.card.sectors:hover { box-shadow: 0 16px 40px rgba(0,0,0,0.4), 0 0 24px rgba(20,184,166,0.08); }
+.card.ai:hover      { box-shadow: 0 16px 40px rgba(0,0,0,0.4), 0 0 24px rgba(234,179,8,0.08); }
+.card.api:hover     { box-shadow: 0 16px 40px rgba(0,0,0,0.4), 0 0 24px rgba(156,163,175,0.08); }
+
+/* ── Footer ── */
+.footer {
+  margin-top: 56px;
+  color: #3a5570; font-size: 12px; text-align: center;
+  letter-spacing: 0.04em;
+}
+
+/* ── Responsive ── */
+@media (max-width: 720px) {
+  .features { grid-template-columns: repeat(2, 1fr); }
+  .hero { padding: 60px 0 40px; }
+}
+@media (max-width: 480px) {
+  .features { grid-template-columns: 1fr; }
+  .hero-stats { gap: 24px; }
+}
+</style>
+</head>
+<body>
+
+<div class="bg"></div>
+<div class="bg-overlay"></div>
+
+<div class="page">
+
+  <!-- Hero -->
+  <section class="hero">
+    <div class="hero-badge">
+      <span class="dot"></span>
+      系統運行中
+    </div>
+    <h1>台股分析系統</h1>
+    <p class="hero-sub">整合技術面、籌碼面、基本面，搭配 AI 輔助，讓你掌握市場先機。</p>
+    <div class="hero-stats">
+      <div class="stat">
+        <div class="stat-num">技術面</div>
+        <div class="stat-label">K線 / 指標 / 訊號</div>
+      </div>
+      <div class="stat">
+        <div class="stat-num">籌碼面</div>
+        <div class="stat-label">法人 / 融資券</div>
+      </div>
+      <div class="stat">
+        <div class="stat-num">基本面</div>
+        <div class="stat-label">財報 / 月營收 / 估值</div>
+      </div>
+      <div class="stat">
+        <div class="stat-num">AI</div>
+        <div class="stat-label">Claude 輔助分析</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Feature Cards -->
+  <p class="grid-title">選擇功能</p>
+  <div class="features">
+
+    <a href="/chart.html" class="card chart">
+      <div class="card-icon">📈</div>
+      <div class="card-title">K 線圖分析</div>
+      <div class="card-desc">技術指標、K線型態、AI 即時分析、法人與融資券動向。</div>
+      <span class="card-arrow">→</span>
+    </a>
+
+    <a href="/screen.html" class="card screen">
+      <div class="card-icon">🔍</div>
+      <div class="card-title">策略篩選</div>
+      <div class="card-desc">黃金交叉、RSI 超賣、MACD 訊號等多種策略一鍵篩股。</div>
+      <span class="card-arrow">→</span>
+    </a>
+
+    <a href="/backtest.html" class="card backtest">
+      <div class="card-icon">⏱</div>
+      <div class="card-title">策略回測</div>
+      <div class="card-desc">歷史數據驗證策略績效，勝率、最大回撤、年化報酬一目瞭然。</div>
+      <span class="card-arrow">→</span>
+    </a>
+
+    <a href="/sectors.html" class="card sectors">
+      <div class="card-icon">🗂</div>
+      <div class="card-title">產業分類</div>
+      <div class="card-desc">自訂供應鏈群組、類股分組，快速掌握產業輪動。</div>
+      <span class="card-arrow">→</span>
+    </a>
+
+    <a href="/chart.html#chat" class="card ai">
+      <div class="card-icon">🤖</div>
+      <div class="card-title">AI 聊天分析</div>
+      <div class="card-desc">與 Claude 多輪對話，深度剖析個股、盤勢與投資策略。</div>
+      <span class="card-arrow">→</span>
+    </a>
+
+    <a href="/api.html" class="card api">
+      <div class="card-icon">📄</div>
+      <div class="card-title">API 文件</div>
+      <div class="card-desc">REST API 完整參考，技術面、籌碼面、基本面端點一覽。</div>
+      <span class="card-arrow">→</span>
+    </a>
+
+  </div>
+
+  <div class="footer">Taiwan Stock Analysis System &nbsp;·&nbsp; Powered by Claude</div>
+
+</div>
+
+</body>
+</html>
