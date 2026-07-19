@@ -1,0 +1,863 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>產業地圖 - 台股供應鏈研究系統</title>
+<style>
+:root {
+  --bg: #0d1117; --bg2: #161b22; --bg3: #21262d;
+  --border: #30363d; --text: #e6edf3; --muted: #8b949e;
+  --green: #3fb950; --red: #f85149; --yellow: #e3b341;
+  --blue: #58a6ff; --purple: #bc8cff; --radius: 8px;
+}
+*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Microsoft JhengHei', sans-serif; font-size: 14px; }
+
+.topbar { display:flex; align-items:center; gap:16px; padding:10px 20px; background:var(--bg2); border-bottom:1px solid var(--border); position:sticky; top:0; z-index:100; }
+.topbar a { color:var(--blue); text-decoration:none; font-size:13px; font-weight:600; }
+.topbar .title { font-weight:700; font-size:15px; }
+.topbar nav { margin-left:auto; display:flex; gap:14px; }
+.topbar nav a { color:var(--muted); font-weight:400; }
+.topbar nav a:hover { color:var(--text); }
+
+.layout { display:flex; min-height:calc(100vh - 45px); }
+
+.sidebar { width:220px; flex-shrink:0; background:var(--bg2); border-right:1px solid var(--border); padding:14px 10px; }
+.sidebar-title { font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.08em; padding:0 6px 8px; }
+.industry-item { padding:8px 10px; border-radius:6px; cursor:pointer; font-size:13px; color:var(--text); margin-bottom:2px; }
+.industry-item:hover { background:var(--bg3); }
+.industry-item.active { background:rgba(88,166,255,0.15); color:var(--blue); }
+.btn-new { width:100%; margin-top:10px; padding:8px; border-radius:6px; background:var(--bg3); border:1px solid var(--border); color:var(--text); cursor:pointer; font-size:12px; }
+.btn-new:hover { border-color:var(--blue); }
+
+.main { flex:1; padding:24px 32px 80px; max-width:980px; }
+.empty { color:var(--muted); padding:40px; text-align:center; }
+
+.im-header { display:flex; align-items:center; gap:10px; margin-bottom:24px; }
+.im-header h1 { font-size:22px; font-weight:700; flex:1; }
+.im-header input.name { font-size:22px; font-weight:700; background:none; border:none; color:var(--text); border-bottom:1px solid var(--border); padding:2px 0; flex:1; }
+.im-header input.name:focus { outline:none; border-bottom-color:var(--blue); }
+.btn-toggle { background:var(--bg3); border:1px solid var(--border); color:var(--text); border-radius:6px; padding:6px 12px; font-size:12px; cursor:pointer; white-space:nowrap; }
+.btn-toggle:hover { border-color:var(--blue); }
+.btn-delete-map { background:none; border:1px solid var(--red); color:var(--red); border-radius:6px; padding:5px 10px; font-size:12px; cursor:pointer; white-space:nowrap; }
+.btn-delete-map:hover { background:rgba(248,81,73,0.1); }
+
+.card { background:var(--bg2); border:1px solid var(--border); border-radius:var(--radius); padding:18px 20px; margin-bottom:20px; }
+.card-title { font-size:13px; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:.06em; margin-bottom:12px; display:flex; align-items:center; gap:10px; }
+.card-title .hint { font-weight:400; text-transform:none; letter-spacing:0; color:#5a6a7a; font-size:11px; }
+
+textarea, input[type=text] { width:100%; background:var(--bg3); border:1px solid var(--border); border-radius:6px; color:var(--text); padding:8px 10px; font-size:13px; font-family:inherit; resize:vertical; }
+textarea:focus, input[type=text]:focus { outline:none; border-color:var(--blue); }
+
+.btn-save { background:var(--blue); border:none; color:#fff; border-radius:6px; padding:6px 14px; font-size:12px; cursor:pointer; margin-top:10px; }
+.btn-save:hover { opacity:.9; }
+.btn-save.small { padding:4px 10px; margin-top:6px; }
+.save-ok { color:var(--green); font-size:12px; margin-left:8px; }
+
+/* read-mode content */
+.field-value { white-space:pre-wrap; line-height:1.7; color:var(--text); }
+.field-value.empty { color:#4a5a6a; font-style:italic; }
+
+table.rtable { width:100%; border-collapse:collapse; }
+table.rtable th { text-align:left; font-size:11px; color:var(--muted); padding:6px 8px; border-bottom:1px solid var(--border); }
+table.rtable td { padding:8px; border-bottom:1px solid var(--border); vertical-align:top; line-height:1.6; }
+table.rtable td.layer-name { font-weight:600; white-space:nowrap; color:var(--blue); }
+table.rtable td.dim { color:#4a5a6a; font-style:italic; }
+table.rtable input { font-size:12px; padding:5px 7px; }
+
+.causal-line { margin-bottom:16px; padding-bottom:16px; border-bottom:1px solid var(--border); }
+.causal-line:last-child { border-bottom:none; margin-bottom:0; padding-bottom:0; }
+.causal-line .label { font-size:12px; font-weight:700; color:var(--yellow); margin-bottom:6px; }
+.causal-line textarea { margin-bottom:6px; min-height:50px; }
+.causal-line textarea.evidence { min-height:36px; }
+.causal-line .evidence-text { color:var(--muted); font-size:12.5px; margin-top:4px; }
+
+.btn-row-remove { background:none; border:none; color:var(--red); cursor:pointer; font-size:14px; }
+.btn-add-row { background:none; border:1px dashed var(--border); color:var(--muted); border-radius:6px; padding:5px 10px; font-size:12px; cursor:pointer; margin-right:8px; }
+.btn-add-row:hover { border-color:var(--blue); color:var(--blue); }
+
+.hyp-card { background:var(--bg3); border:1px solid var(--border); border-radius:6px; padding:12px; margin-bottom:10px; }
+.hyp-card textarea { margin-bottom:6px; }
+.hyp-card .row { display:flex; justify-content:space-between; align-items:center; margin-top:6px; }
+.btn-del-hyp { background:none; border:none; color:var(--red); cursor:pointer; font-size:12px; }
+.status-badge { display:inline-block; padding:2px 9px; border-radius:10px; font-size:11px; background:var(--bg3); border:1px solid var(--border); color:var(--muted); }
+
+.gap-list { list-style:none; }
+.gap-list li { padding:4px 0 4px 22px; position:relative; line-height:1.6; }
+.gap-list li::before { content:'☐'; position:absolute; left:0; color:var(--yellow); }
+
+/* company cards */
+.company-card { border:1px solid var(--border); border-radius:8px; margin-bottom:8px; overflow:hidden; }
+.company-summary { display:flex; align-items:center; gap:10px; padding:10px 14px; cursor:pointer; background:var(--bg3); }
+.company-summary:hover { background:#262c36; }
+.stock-tag { font-family:monospace; font-size:12px; color:var(--muted); }
+.company-summary .cname { font-weight:600; }
+.badge { font-size:11px; padding:2px 8px; border-radius:10px; background:rgba(88,166,255,0.12); color:var(--blue); }
+.badge.judgment { background:rgba(227,179,65,0.12); color:var(--yellow); }
+.badge.muted { background:var(--bg2); color:#4a5a6a; }
+.expand-icon { margin-left:auto; color:var(--muted); font-size:11px; }
+.company-detail { padding:16px; border-top:1px solid var(--border); }
+.company-detail .loading { color:var(--muted); font-size:12px; }
+.cd-row { display:grid; grid-template-columns:160px 1fr; gap:10px; margin-bottom:10px; align-items:start; }
+.cd-row .cd-label { font-size:11px; color:var(--muted); padding-top:6px; }
+.cd-section-title { font-size:11px; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:.06em; margin:16px 0 8px; padding-top:12px; border-top:1px solid var(--border); }
+.cd-section-title:first-child { border-top:none; margin-top:0; padding-top:0; }
+.company-toolbar { display:flex; justify-content:flex-end; gap:8px; margin-bottom:6px; }
+.check-item { display:flex; align-items:center; gap:8px; padding:4px 0; font-size:13px; }
+.check-item.checked { color:var(--green); }
+.check-item input[type=checkbox] { width:auto; }
+.event-item { padding:8px 0; border-bottom:1px solid var(--border); font-size:12.5px; }
+.event-item:last-child { border-bottom:none; }
+.event-date { color:var(--blue); font-weight:600; margin-right:8px; }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <a href="/">← 台股供應鏈研究系統</a>
+  <span class="title">產業地圖</span>
+  <nav>
+    <a href="/dashboard.html">觀察總覽</a>
+    <a href="/sectors.html">產業分類</a>
+    <a href="/api.html">API</a>
+  </nav>
+</div>
+
+<div class="layout">
+  <div class="sidebar">
+    <div class="sidebar-title">產業地圖</div>
+    <div id="industryList"></div>
+    <button class="btn-new" onclick="createIndustry()">+ 新增產業</button>
+  </div>
+
+  <div class="main" id="main">
+    <div class="empty">選擇左側產業，或新增一個</div>
+  </div>
+</div>
+
+<script>
+const LAYERS = ['設備','原材料','關鍵材料','零組件製造','模組整合','終端產品'];
+const CAUSAL_TYPES = [
+  { key: 'supply', label: '① 供給側結構性變化' },
+  { key: 'demand', label: '② 需求側缺口浮現' },
+  { key: 'inventory', label: '③ 庫存週期位置' },
+];
+
+let industries = [];
+let current = null;   // full loaded industry map object
+let viewMode = true;  // true = 檢視, false = 編輯
+let matrixRows = [];
+let companyState = {}; // stock_id -> { expanded, editing, detail }
+
+function esc(s) { return (s ?? '').toString().replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function fieldValue(text) {
+  const t = (text ?? '').toString().trim();
+  return t ? `<div class="field-value">${esc(t)}</div>` : `<div class="field-value empty">尚未填寫</div>`;
+}
+
+/* ─── Sidebar / industry list ─── */
+async function loadIndustryList() {
+  const r = await fetch('/api/industries');
+  const j = await r.json();
+  industries = j.success ? j.data : [];
+  renderList();
+}
+
+function renderList() {
+  const el = document.getElementById('industryList');
+  el.innerHTML = industries.map(i =>
+    `<div class="industry-item ${current && current.id === i.id ? 'active' : ''}" onclick="selectIndustry(${i.id})">${esc(i.name)}</div>`
+  ).join('') || '<div style="color:var(--muted);font-size:12px;padding:8px 6px;">尚無產業地圖</div>';
+}
+
+async function createIndustry() {
+  const name = prompt('新產業地圖名稱？');
+  if (!name) return;
+  const r = await fetch('/api/industries', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name })
+  });
+  const j = await r.json();
+  if (!j.success) return alert(j.error || '建立失敗');
+  await loadIndustryList();
+  selectIndustry(j.id);
+}
+
+async function selectIndustry(id) {
+  const r = await fetch(`/api/industries/${id}`);
+  const j = await r.json();
+  if (!j.success) return alert(j.error || '載入失敗');
+  current = j.data;
+  companyState = {};
+  viewMode = true;
+  renderList();
+  renderMain();
+}
+
+async function deleteIndustry() {
+  if (!current) return;
+  if (!confirm(`刪除產業地圖「${current.name}」？個股框架資料會保留但取消關聯。`)) return;
+  await fetch(`/api/industries/${current.id}`, { method: 'DELETE' });
+  current = null;
+  await loadIndustryList();
+  document.getElementById('main').innerHTML = '<div class="empty">選擇左側產業，或新增一個</div>';
+}
+
+function toggleViewMode() {
+  viewMode = !viewMode;
+  renderMain();
+}
+
+function flash(btn) {
+  const ok = document.createElement('span');
+  ok.className = 'save-ok';
+  ok.textContent = '✓ 已儲存';
+  btn.after(ok);
+  setTimeout(() => ok.remove(), 1500);
+}
+
+/* ─── Basic field save (industry level) ─── */
+async function saveBasicField(field, btn) {
+  const val = document.getElementById('f_' + field).value;
+  await fetch(`/api/industries/${current.id}`, {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      name: current.name,
+      tech_background_notes: field === 'tech_background_notes' ? val : current.tech_background_notes,
+      taiwan_participation_notes: field === 'taiwan_participation_notes' ? val : current.taiwan_participation_notes,
+      customer_relationship_notes: field === 'customer_relationship_notes' ? val : current.customer_relationship_notes,
+      open_gaps: field === 'open_gaps' ? val : current.open_gaps,
+    })
+  });
+  current[field] = val;
+  flash(btn);
+}
+
+async function saveName() {
+  const name = document.getElementById('f_name').value.trim();
+  if (!name) return;
+  await fetch(`/api/industries/${current.id}`, {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...current, name })
+  });
+  current.name = name;
+  await loadIndustryList();
+  renderList();
+}
+
+/* ─── Layers ─── */
+async function saveLayers(btn) {
+  const layers = LAYERS.map(layer => ({
+    layer,
+    players: document.getElementById('lp_' + layer).value,
+    scarcity_source: document.getElementById('ls_' + layer).value,
+    moat_level: document.getElementById('lm_' + layer).value,
+    key_structure: document.getElementById('lk_' + layer).value,
+  }));
+  await fetch(`/api/industries/${current.id}/layers`, {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ layers })
+  });
+  current.layers = layers;
+  flash(btn);
+}
+
+/* ─── Terms ─── */
+let termRows = [];
+function addTermRow() { termRows.push({ term: '', definition: '' }); renderTermsTable(); }
+function removeTermRow(i) { termRows.splice(i, 1); renderTermsTable(); }
+function renderTermsTable() {
+  const body = document.getElementById('termsBody');
+  if (!body) return;
+  body.innerHTML = termRows.map((t, i) => `
+    <tr>
+      <td style="width:180px"><input type="text" value="${esc(t.term)}" onchange="termRows[${i}].term=this.value" placeholder="術語"></td>
+      <td><input type="text" value="${esc(t.definition)}" onchange="termRows[${i}].definition=this.value" placeholder="定義"></td>
+      <td><button class="btn-row-remove" onclick="removeTermRow(${i})">✕</button></td>
+    </tr>
+  `).join('');
+}
+async function saveTerms(btn) {
+  await fetch(`/api/industries/${current.id}/terms`, {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ terms: termRows })
+  });
+  current.terms = termRows.map((t, i) => ({ ...t, sort_order: i }));
+  flash(btn);
+}
+
+/* ─── Matrix ─── */
+function addMatrixRow() { matrixRows.push({ stock_id: '', product_line: '', application: '', note: '' }); renderMatrixTable(); }
+function removeMatrixRow(i) { matrixRows.splice(i, 1); renderMatrixTable(); }
+function renderMatrixTable() {
+  const body = document.getElementById('matrixBody');
+  if (!body) return;
+  body.innerHTML = matrixRows.map((r, i) => `
+    <tr>
+      <td><input type="text" value="${esc(r.stock_id)}" onchange="matrixRows[${i}].stock_id=this.value" placeholder="股號"></td>
+      <td><input type="text" value="${esc(r.product_line)}" onchange="matrixRows[${i}].product_line=this.value" placeholder="產品線"></td>
+      <td><input type="text" value="${esc(r.application)}" onchange="matrixRows[${i}].application=this.value" placeholder="應用"></td>
+      <td><input type="text" value="${esc(r.note)}" onchange="matrixRows[${i}].note=this.value" placeholder="備註"></td>
+      <td><button class="btn-row-remove" onclick="removeMatrixRow(${i})">✕</button></td>
+    </tr>
+  `).join('');
+}
+async function saveMatrix(btn) {
+  await fetch(`/api/industries/${current.id}/matrix`, {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ cells: matrixRows })
+  });
+  current.matrix = matrixRows;
+  flash(btn);
+}
+
+/* ─── Causal lines (industry) ─── */
+async function saveCausalLines(btn) {
+  const causal_lines = CAUSAL_TYPES.map(c => ({
+    line_type: c.key,
+    assessment: document.getElementById('ca_' + c.key).value,
+    evidence: document.getElementById('ce_' + c.key).value,
+  }));
+  await fetch(`/api/industries/${current.id}/causal-lines`, {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ causal_lines })
+  });
+  current.causal_lines = causal_lines;
+  flash(btn);
+}
+
+/* ─── Hypotheses (industry) ─── */
+async function addHypothesis() {
+  const hypothesis = prompt('新假設內容？');
+  if (!hypothesis) return;
+  const r = await fetch(`/api/industries/${current.id}/hypotheses`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ hypothesis, sort_order: current.hypotheses.length })
+  });
+  const j = await r.json();
+  current.hypotheses.push({ id: j.id, hypothesis, falsifying_observation: '', current_status: '' });
+  renderMain();
+}
+async function saveHypothesis(hid, btn) {
+  const hypothesis = document.getElementById('hh_' + hid).value;
+  const falsifying_observation = document.getElementById('hf_' + hid).value;
+  const current_status = document.getElementById('hc_' + hid).value;
+  await fetch(`/api/industries/${current.id}/hypotheses/${hid}`, {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ hypothesis, falsifying_observation, current_status })
+  });
+  const h = current.hypotheses.find(x => x.id === hid);
+  if (h) Object.assign(h, { hypothesis, falsifying_observation, current_status });
+  flash(btn);
+}
+async function deleteHypothesis(hid) {
+  if (!confirm('刪除此假設？')) return;
+  await fetch(`/api/industries/${current.id}/hypotheses/${hid}`, { method: 'DELETE' });
+  current.hypotheses = current.hypotheses.filter(h => h.id !== hid);
+  renderMain();
+}
+
+/* ─── Render: EDIT MODE ─── */
+function layerEditRow(layer) {
+  const existing = (current.layers || []).find(l => l.layer === layer) || {};
+  return `
+    <tr>
+      <td class="layer-name">${layer}</td>
+      <td><input type="text" id="lp_${layer}" value="${esc(existing.players)}" placeholder="主要玩家（台廠標*）"></td>
+      <td><input type="text" id="ls_${layer}" value="${esc(existing.scarcity_source)}" placeholder="稀缺性來源"></td>
+      <td><input type="text" id="lm_${layer}" value="${esc(existing.moat_level)}" placeholder="護城河等級"></td>
+      <td><input type="text" id="lk_${layer}" value="${esc(existing.key_structure)}" placeholder="關鍵結構"></td>
+    </tr>`;
+}
+function causalEditBlock(type) {
+  const existing = (current.causal_lines || []).find(c => c.line_type === type.key) || {};
+  return `
+    <div class="causal-line">
+      <div class="label">${type.label}</div>
+      <textarea id="ca_${type.key}" placeholder="現況判斷">${esc(existing.assessment)}</textarea>
+      <textarea class="evidence" id="ce_${type.key}" placeholder="支持證據 / 待確認缺口">${esc(existing.evidence)}</textarea>
+    </div>`;
+}
+function hypEditCard(h) {
+  return `
+    <div class="hyp-card">
+      <textarea id="hh_${h.id}" rows="2" placeholder="假設">${esc(h.hypothesis)}</textarea>
+      <textarea id="hf_${h.id}" rows="2" placeholder="會被推翻的觀察">${esc(h.falsifying_observation)}</textarea>
+      <input type="text" id="hc_${h.id}" value="${esc(h.current_status)}" placeholder="目前狀態">
+      <div class="row">
+        <button class="btn-save small" onclick="saveHypothesis(${h.id}, this)">儲存</button>
+        <button class="btn-del-hyp" onclick="deleteHypothesis(${h.id})">刪除假設</button>
+      </div>
+    </div>`;
+}
+
+function renderEditView() {
+  matrixRows = (current.matrix || []).map(m => ({ ...m }));
+  termRows = (current.terms || []).map(t => ({ ...t }));
+
+  return `
+    <div class="card">
+      <div class="card-title">0. 前置技術背景 <span class="hint">容易混淆的技術概念先在此釐清</span></div>
+      <textarea id="f_tech_background_notes" rows="3">${esc(current.tech_background_notes)}</textarea>
+      <button class="btn-save" onclick="saveBasicField('tech_background_notes', this)">儲存</button>
+    </div>
+
+    <div class="card">
+      <div class="card-title">1. 六層供應鏈地圖</div>
+      <table class="rtable">
+        <tr><th>層別</th><th>主要玩家</th><th>稀缺性來源</th><th>護城河等級</th><th>關鍵結構</th></tr>
+        ${LAYERS.map(layerEditRow).join('')}
+      </table>
+      <button class="btn-save" onclick="saveLayers(this)">儲存六層地圖</button>
+    </div>
+
+    <div class="card">
+      <div class="card-title">2. 名詞解釋 <span class="hint">避免後面表格出現名詞混用</span></div>
+      <table class="rtable"><tbody id="termsBody"></tbody></table>
+      <button class="btn-add-row" onclick="addTermRow()">+ 新增術語</button>
+      <button class="btn-save" onclick="saveTerms(this)">儲存名詞解釋</button>
+    </div>
+
+    <div class="card">
+      <div class="card-title">3. 台灣參與度總覽 <span class="hint">哪些台廠在哪一層、全球份額估計、與國際大廠的關係型態</span></div>
+      <textarea id="f_taiwan_participation_notes" rows="4">${esc(current.taiwan_participation_notes)}</textarea>
+      <button class="btn-save" onclick="saveBasicField('taiwan_participation_notes', this)">儲存</button>
+    </div>
+
+    <div class="card">
+      <div class="card-title">4. 主題中性矩陣 <span class="hint">公司 × 產品 × 應用，不預設哪個題材最重要</span></div>
+      <table class="rtable">
+        <tr><th>股號</th><th>產品線</th><th>應用</th><th>備註</th><th></th></tr>
+        <tbody id="matrixBody"></tbody>
+      </table>
+      <button class="btn-add-row" onclick="addMatrixRow()">+ 新增一列</button>
+      <button class="btn-save" onclick="saveMatrix(this)">儲存矩陣</button>
+    </div>
+
+    <div class="card">
+      <div class="card-title">5. 三條因果線分析</div>
+      ${CAUSAL_TYPES.map(causalEditBlock).join('')}
+      <button class="btn-save" onclick="saveCausalLines(this)">儲存因果線分析</button>
+    </div>
+
+    <div class="card">
+      <div class="card-title">6. 客戶關係類型學檢視 <span class="hint">規格驗證型 vs. 架構共同開發型</span></div>
+      <textarea id="f_customer_relationship_notes" rows="4">${esc(current.customer_relationship_notes)}</textarea>
+      <button class="btn-save" onclick="saveBasicField('customer_relationship_notes', this)">儲存</button>
+    </div>
+
+    <div class="card">
+      <div class="card-title">7. 可證偽假設 <span class="hint">至少 2-3 條，附觀察指標</span></div>
+      <div>${(current.hypotheses || []).map(hypEditCard).join('') || '<div style="color:var(--muted);font-size:12px;">尚無假設</div>'}</div>
+      <button class="btn-add-row" onclick="addHypothesis()">+ 新增假設</button>
+    </div>
+
+    <div class="card">
+      <div class="card-title">8. 待確認事項 <span class="hint">明確列出未確認的資訊，不要用假設填補</span></div>
+      <textarea id="f_open_gaps" rows="3" placeholder="每行一項，例如：- 供應商身分未確認">${esc(current.open_gaps)}</textarea>
+      <button class="btn-save" onclick="saveBasicField('open_gaps', this)">儲存</button>
+    </div>
+  `;
+}
+
+/* ─── Render: READ MODE ─── */
+function layerReadRow(layer) {
+  const l = (current.layers || []).find(x => x.layer === layer) || {};
+  const has = l.players || l.scarcity_source || l.moat_level || l.key_structure;
+  return `
+    <tr>
+      <td class="layer-name">${layer}</td>
+      <td class="${l.players ? '' : 'dim'}">${l.players ? esc(l.players) : '—'}</td>
+      <td class="${l.scarcity_source ? '' : 'dim'}">${l.scarcity_source ? esc(l.scarcity_source) : '—'}</td>
+      <td class="${l.moat_level ? '' : 'dim'}">${l.moat_level ? esc(l.moat_level) : '—'}</td>
+      <td class="${l.key_structure ? '' : 'dim'}">${l.key_structure ? esc(l.key_structure) : '—'}</td>
+    </tr>`;
+}
+function causalReadBlock(type) {
+  const c = (current.causal_lines || []).find(x => x.line_type === type.key) || {};
+  return `
+    <div class="causal-line">
+      <div class="label">${type.label}</div>
+      ${fieldValue(c.assessment)}
+      ${c.evidence ? `<div class="evidence-text">證據：${esc(c.evidence)}</div>` : ''}
+    </div>`;
+}
+function hypReadCard(h) {
+  return `
+    <div class="hyp-card">
+      <div style="font-weight:600;margin-bottom:4px;">${esc(h.hypothesis)}</div>
+      ${h.falsifying_observation ? `<div style="color:var(--muted);font-size:12.5px;margin-bottom:6px;">會被推翻的觀察：${esc(h.falsifying_observation)}</div>` : ''}
+      <span class="status-badge">${h.current_status ? esc(h.current_status) : '尚未追蹤'}</span>
+    </div>`;
+}
+
+function renderReadView() {
+  const layers = current.layers || [];
+  const terms = current.terms || [];
+  const matrix = current.matrix || [];
+  const hypotheses = current.hypotheses || [];
+  const gapsLines = (current.open_gaps || '').split('\n').map(s => s.trim()).filter(Boolean);
+
+  return `
+    <div class="card">
+      <div class="card-title">0. 前置技術背景</div>
+      ${fieldValue(current.tech_background_notes)}
+    </div>
+
+    <div class="card">
+      <div class="card-title">1. 六層供應鏈地圖</div>
+      <table class="rtable">
+        <tr><th>層別</th><th>主要玩家</th><th>稀缺性來源</th><th>護城河等級</th><th>關鍵結構</th></tr>
+        ${LAYERS.map(layerReadRow).join('')}
+      </table>
+    </div>
+
+    <div class="card">
+      <div class="card-title">2. 名詞解釋</div>
+      ${terms.length ? `<table class="rtable">${terms.map(t => `<tr><td style="width:160px;font-weight:600;">${esc(t.term)}</td><td>${esc(t.definition)}</td></tr>`).join('')}</table>` : fieldValue(null)}
+    </div>
+
+    <div class="card">
+      <div class="card-title">3. 台灣參與度總覽</div>
+      ${fieldValue(current.taiwan_participation_notes)}
+    </div>
+
+    <div class="card">
+      <div class="card-title">4. 主題中性矩陣</div>
+      ${matrix.length ? `<table class="rtable"><tr><th>股號</th><th>產品線</th><th>應用</th><th>備註</th></tr>
+        ${matrix.map(m => `<tr><td>${esc(m.stock_id)}</td><td>${esc(m.product_line)}</td><td>${esc(m.application)}</td><td>${esc(m.note)}</td></tr>`).join('')}
+      </table>` : fieldValue(null)}
+    </div>
+
+    <div class="card">
+      <div class="card-title">5. 三條因果線分析</div>
+      ${CAUSAL_TYPES.map(causalReadBlock).join('')}
+    </div>
+
+    <div class="card">
+      <div class="card-title">6. 客戶關係類型學檢視</div>
+      ${fieldValue(current.customer_relationship_notes)}
+    </div>
+
+    <div class="card">
+      <div class="card-title">7. 可證偽假設</div>
+      ${hypotheses.length ? hypotheses.map(hypReadCard).join('') : fieldValue(null)}
+    </div>
+
+    <div class="card">
+      <div class="card-title">8. 待確認事項</div>
+      ${gapsLines.length ? `<ul class="gap-list">${gapsLines.map(l => `<li>${esc(l)}</li>`).join('')}</ul>` : fieldValue(null)}
+    </div>
+  `;
+}
+
+/* ─── Companies section (independent of top-level viewMode) ─── */
+function judgmentBadge(v) {
+  return v ? `<span class="badge judgment">${esc(v)}</span>` : `<span class="badge muted">尚無判斷</span>`;
+}
+
+async function toggleCompanyExpand(stockId) {
+  const st = companyState[stockId] || (companyState[stockId] = { expanded: false, editing: false, detail: null });
+  st.expanded = !st.expanded;
+  if (st.expanded && !st.detail) {
+    st.loading = true;
+    renderCompanies();
+    const r = await fetch(`/api/stocks/${stockId}/profile`);
+    const j = await r.json();
+    st.loading = false;
+    st.detail = j.success ? j.data : { error: j.error || '尚未建立框架分類' };
+  }
+  renderCompanies();
+}
+
+function toggleCompanyEdit(stockId) {
+  companyState[stockId].editing = !companyState[stockId].editing;
+  renderCompanies();
+}
+
+async function addCoverageStock() {
+  const stockId = prompt('新增股票代號（會加入此產業的覆蓋清單）：');
+  if (!stockId) return;
+  const r = await fetch(`/api/stocks/${stockId}/profile`, {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ industry_map_id: current.id, is_coverage_active: true })
+  });
+  const j = await r.json();
+  if (!j.success) return alert(j.error || '新增失敗');
+  await selectIndustry(current.id);
+}
+
+async function saveCompanyProfile(stockId, btn) {
+  const g = (id) => document.getElementById(id + '_' + stockId);
+  const body = {
+    layer: g('cf_layer').value || null,
+    moat_source: g('cf_moat_source').value || null,
+    moat_level: g('cf_moat_level').value,
+    key_structure_status: g('cf_key_structure_status').value,
+    relationship_type: g('cf_relationship_type').value || null,
+    supplier_multiplicity: g('cf_supplier_multiplicity').value || null,
+    integration_risk_notes: g('cf_integration_risk_notes').value,
+    v1_judgment: g('cf_v1_judgment').value,
+    v1_reasoning: g('cf_v1_reasoning').value,
+    business_notes: g('cf_business_notes').value,
+    open_gaps: g('cf_open_gaps').value,
+    industry_map_id: current.id,
+    is_coverage_active: true,
+  };
+  await fetch(`/api/stocks/${stockId}/profile`, {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  });
+  Object.assign(companyState[stockId].detail, body);
+  flash(btn);
+}
+
+async function saveCompanyCausalLines(stockId, btn) {
+  const causal_lines = CAUSAL_TYPES.map(c => ({
+    line_type: c.key,
+    assessment: document.getElementById('cca_' + c.key + '_' + stockId).value,
+    evidence: document.getElementById('cce_' + c.key + '_' + stockId).value,
+  }));
+  await fetch(`/api/stocks/${stockId}/causal-lines`, {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ causal_lines })
+  });
+  companyState[stockId].detail.causal_lines = causal_lines;
+  flash(btn);
+}
+
+async function addCompanyHypothesis(stockId) {
+  const hypothesis = prompt('新假設內容？');
+  if (!hypothesis) return;
+  const st = companyState[stockId];
+  const r = await fetch(`/api/stocks/${stockId}/hypotheses`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ hypothesis, sort_order: st.detail.hypotheses.length })
+  });
+  const j = await r.json();
+  st.detail.hypotheses.push({ id: j.id, hypothesis, falsifying_observation: '', current_status: '' });
+  renderCompanies();
+}
+async function saveCompanyHypothesis(stockId, hid, btn) {
+  const hypothesis = document.getElementById(`chh_${hid}_${stockId}`).value;
+  const falsifying_observation = document.getElementById(`chf_${hid}_${stockId}`).value;
+  const current_status = document.getElementById(`chc_${hid}_${stockId}`).value;
+  await fetch(`/api/stocks/${stockId}/hypotheses/${hid}`, {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ hypothesis, falsifying_observation, current_status })
+  });
+  flash(btn);
+}
+async function deleteCompanyHypothesis(stockId, hid) {
+  if (!confirm('刪除此假設？')) return;
+  await fetch(`/api/stocks/${stockId}/hypotheses/${hid}`, { method: 'DELETE' });
+  const st = companyState[stockId];
+  st.detail.hypotheses = st.detail.hypotheses.filter(h => h.id !== hid);
+  renderCompanies();
+}
+
+async function saveVerificationItems(stockId, btn) {
+  const st = companyState[stockId];
+  const items = st.detail.verification_items.map((it, i) => ({
+    item: document.getElementById(`vi_${i}_${stockId}`).value,
+    is_checked: document.getElementById(`vc_${i}_${stockId}`).checked,
+  }));
+  await fetch(`/api/stocks/${stockId}/verification`, {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ items })
+  });
+  st.detail.verification_items = items;
+  flash(btn);
+}
+function addVerificationItem(stockId) {
+  companyState[stockId].detail.verification_items.push({ item: '', is_checked: false });
+  renderCompanies();
+}
+function removeVerificationItem(stockId, i) {
+  companyState[stockId].detail.verification_items.splice(i, 1);
+  renderCompanies();
+}
+
+async function addCompanyEvent(stockId) {
+  const st = companyState[stockId];
+  const event_date = prompt('事件日期 (YYYY-MM-DD)？', new Date().toISOString().slice(0,10));
+  if (!event_date) return;
+  const event_desc = prompt('事件內容？');
+  if (!event_desc) return;
+  const r = await fetch(`/api/stocks/${stockId}/events`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ event_date, event_desc })
+  });
+  const j = await r.json();
+  st.detail.events.unshift({ id: j.id, event_date, event_desc, affected_hypothesis: null, impact_on_judgment: null });
+  renderCompanies();
+}
+async function deleteCompanyEvent(stockId, eid) {
+  if (!confirm('刪除此事件？')) return;
+  await fetch(`/api/stocks/${stockId}/events/${eid}`, { method: 'DELETE' });
+  const st = companyState[stockId];
+  st.detail.events = st.detail.events.filter(e => e.id !== eid);
+  renderCompanies();
+}
+
+function enumOptions(values, selected) {
+  return '<option value="">—</option>' + values.map(v => `<option value="${v}" ${v===selected?'selected':''}>${v}</option>`).join('');
+}
+
+function companyDetailEdit(stockId, d) {
+  const MOAT_SOURCE = ['地理稀缺性','製程精度+BOM鎖定','製程know-how稀缺性'];
+  const RELATIONSHIP = ['規格驗證型','架構共同開發型'];
+  const SUPPLIER = ['多供應商','單一綁定'];
+  d.verification_items = d.verification_items || [];
+
+  return `
+    <div class="cd-section-title">護城河 / 客戶關係 / v1 判斷</div>
+    <div class="cd-row"><div class="cd-label">供應鏈層別</div><select id="cf_layer_${stockId}">${enumOptions(LAYERS, d.layer)}</select></div>
+    <div class="cd-row"><div class="cd-label">稀缺性來源</div><select id="cf_moat_source_${stockId}">${enumOptions(MOAT_SOURCE, d.moat_source)}</select></div>
+    <div class="cd-row"><div class="cd-label">護城河等級</div><input type="text" id="cf_moat_level_${stockId}" value="${esc(d.moat_level)}"></div>
+    <div class="cd-row"><div class="cd-label">關鍵結構現況</div><textarea id="cf_key_structure_status_${stockId}" rows="2">${esc(d.key_structure_status)}</textarea></div>
+    <div class="cd-row"><div class="cd-label">客戶關係型態</div><select id="cf_relationship_type_${stockId}">${enumOptions(RELATIONSHIP, d.relationship_type)}</select></div>
+    <div class="cd-row"><div class="cd-label">多供應商/單一綁定</div><select id="cf_supplier_multiplicity_${stockId}">${enumOptions(SUPPLIER, d.supplier_multiplicity)}</select></div>
+    <div class="cd-row"><div class="cd-label">3-5年整合/替代風險</div><textarea id="cf_integration_risk_notes_${stockId}" rows="2">${esc(d.integration_risk_notes)}</textarea></div>
+    <div class="cd-row"><div class="cd-label">v1 投資判斷</div><input type="text" id="cf_v1_judgment_${stockId}" value="${esc(d.v1_judgment)}" placeholder="例如 Fully priced, watchlist not buy"></div>
+    <div class="cd-row"><div class="cd-label">判斷理由</div><textarea id="cf_v1_reasoning_${stockId}" rows="2">${esc(d.v1_reasoning)}</textarea></div>
+    <div class="cd-row"><div class="cd-label">商業模式補充</div><textarea id="cf_business_notes_${stockId}" rows="3">${esc(d.business_notes)}</textarea></div>
+    <div class="cd-row"><div class="cd-label">待確認事項</div><textarea id="cf_open_gaps_${stockId}" rows="2">${esc(d.open_gaps)}</textarea></div>
+    <button class="btn-save small" onclick="saveCompanyProfile('${stockId}', this)">儲存基本資料</button>
+
+    <div class="cd-section-title">三條因果線在這家公司的具體展現</div>
+    ${CAUSAL_TYPES.map(t => {
+      const c = (d.causal_lines || []).find(x => x.line_type === t.key) || {};
+      return `<div class="causal-line">
+        <div class="label">${t.label}</div>
+        <textarea id="cca_${t.key}_${stockId}" placeholder="判斷">${esc(c.assessment)}</textarea>
+        <textarea class="evidence" id="cce_${t.key}_${stockId}" placeholder="證據">${esc(c.evidence)}</textarea>
+      </div>`;
+    }).join('')}
+    <button class="btn-save small" onclick="saveCompanyCausalLines('${stockId}', this)">儲存因果線</button>
+
+    <div class="cd-section-title">可證偽假設（個股層級）</div>
+    ${(d.hypotheses || []).map(h => `
+      <div class="hyp-card">
+        <textarea id="chh_${h.id}_${stockId}" rows="2">${esc(h.hypothesis)}</textarea>
+        <textarea id="chf_${h.id}_${stockId}" rows="2" placeholder="會被推翻的觀察">${esc(h.falsifying_observation)}</textarea>
+        <input type="text" id="chc_${h.id}_${stockId}" value="${esc(h.current_status)}" placeholder="目前狀態">
+        <div class="row">
+          <button class="btn-save small" onclick="saveCompanyHypothesis('${stockId}', ${h.id}, this)">儲存</button>
+          <button class="btn-del-hyp" onclick="deleteCompanyHypothesis('${stockId}', ${h.id})">刪除</button>
+        </div>
+      </div>`).join('') || '<div style="color:var(--muted);font-size:12px;">尚無假設</div>'}
+    <button class="btn-add-row" onclick="addCompanyHypothesis('${stockId}')">+ 新增假設</button>
+
+    <div class="cd-section-title">驗證清單 <span class="hint">用具體財務數字/事件追蹤假設有沒有成立</span></div>
+    ${d.verification_items.map((it, i) => `
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:6px;">
+        <input type="checkbox" id="vc_${i}_${stockId}" ${it.is_checked ? 'checked' : ''}>
+        <input type="text" id="vi_${i}_${stockId}" value="${esc(it.item)}" placeholder="例如：月營收趨勢是否符合假設方向">
+        <button class="btn-row-remove" onclick="removeVerificationItem('${stockId}', ${i})">✕</button>
+      </div>`).join('')}
+    <button class="btn-add-row" onclick="addVerificationItem('${stockId}')">+ 新增項目</button>
+    <button class="btn-save small" onclick="saveVerificationItems('${stockId}', this)">儲存驗證清單</button>
+
+    <div class="cd-section-title">事件日誌</div>
+    ${(d.events || []).map(e => `
+      <div class="event-item">
+        <span class="event-date">${esc(e.event_date)}</span>${esc(e.event_desc)}
+        <button class="btn-del-hyp" style="margin-left:8px" onclick="deleteCompanyEvent('${stockId}', ${e.id})">刪除</button>
+      </div>`).join('') || '<div style="color:var(--muted);font-size:12px;">尚無事件</div>'}
+    <button class="btn-add-row" onclick="addCompanyEvent('${stockId}')">+ 新增事件</button>
+  `;
+}
+
+function companyDetailRead(d) {
+  const rows = [
+    ['供應鏈層別', d.layer], ['稀缺性來源', d.moat_source], ['護城河等級', d.moat_level],
+    ['關鍵結構現況', d.key_structure_status], ['客戶關係型態', d.relationship_type],
+    ['多供應商/單一綁定', d.supplier_multiplicity], ['3-5年整合/替代風險', d.integration_risk_notes],
+    ['v1 投資判斷', d.v1_judgment], ['判斷理由', d.v1_reasoning], ['商業模式補充', d.business_notes],
+    ['待確認事項', d.open_gaps],
+  ];
+  return `
+    <div class="cd-section-title">護城河 / 客戶關係 / v1 判斷</div>
+    ${rows.map(([label, val]) => `<div class="cd-row"><div class="cd-label">${label}</div>${fieldValue(val)}</div>`).join('')}
+
+    <div class="cd-section-title">三條因果線在這家公司的具體展現</div>
+    ${CAUSAL_TYPES.map(t => {
+      const c = (d.causal_lines || []).find(x => x.line_type === t.key) || {};
+      return `<div class="causal-line"><div class="label">${t.label}</div>${fieldValue(c.assessment)}${c.evidence ? `<div class="evidence-text">證據：${esc(c.evidence)}</div>` : ''}</div>`;
+    }).join('')}
+
+    <div class="cd-section-title">可證偽假設（個股層級）</div>
+    ${(d.hypotheses || []).length ? d.hypotheses.map(hypReadCard).join('') : fieldValue(null)}
+
+    <div class="cd-section-title">驗證清單</div>
+    ${(d.verification_items || []).length ? d.verification_items.map(it =>
+      `<div class="check-item ${it.is_checked ? 'checked' : ''}">${it.is_checked ? '☑' : '☐'} ${esc(it.item)}</div>`
+    ).join('') : fieldValue(null)}
+
+    <div class="cd-section-title">事件日誌</div>
+    ${(d.events || []).length ? d.events.map(e => `<div class="event-item"><span class="event-date">${esc(e.event_date)}</span>${esc(e.event_desc)}</div>`).join('') : fieldValue(null)}
+  `;
+}
+
+function renderCompanies() {
+  const el = document.getElementById('companiesList');
+  if (!el) return;
+  const companies = current.companies || [];
+  el.innerHTML = companies.map(c => {
+    const st = companyState[c.stock_id] || { expanded: false, editing: false, detail: null };
+    let detailHtml = '';
+    if (st.expanded) {
+      if (st.loading) detailHtml = '<div class="company-detail"><div class="loading">載入中...</div></div>';
+      else if (st.detail?.error) detailHtml = `<div class="company-detail"><div class="loading">${esc(st.detail.error)}</div></div>`;
+      else if (st.detail) {
+        detailHtml = `<div class="company-detail">
+          <div class="company-toolbar">
+            <button class="btn-toggle" onclick="toggleCompanyEdit('${c.stock_id}')">${st.editing ? '完成編輯' : '✎ 編輯此股票'}</button>
+          </div>
+          ${st.editing ? companyDetailEdit(c.stock_id, st.detail) : companyDetailRead(st.detail)}
+        </div>`;
+      }
+    }
+    return `
+      <div class="company-card">
+        <div class="company-summary" onclick="toggleCompanyExpand('${c.stock_id}')">
+          <span class="stock-tag">${esc(c.stock_id)}</span>
+          <span class="cname">${esc(c.stock_name)}</span>
+          ${c.layer ? `<span class="badge">${esc(c.layer)}</span>` : ''}
+          ${judgmentBadge(c.v1_judgment)}
+          <span class="expand-icon">${st.expanded ? '▾ 收合' : '▸ 展開'}</span>
+        </div>
+        ${detailHtml}
+      </div>`;
+  }).join('') || '<div style="color:var(--muted);font-size:12px;">此產業尚無覆蓋股票</div>';
+}
+
+/* ─── Main render ─── */
+function renderMain() {
+  document.getElementById('main').innerHTML = `
+    <div class="im-header">
+      ${viewMode
+        ? `<h1>${esc(current.name)}</h1>`
+        : `<input type="text" class="name" id="f_name" value="${esc(current.name)}" onblur="saveName()">`
+      }
+      <button class="btn-toggle" onclick="toggleViewMode()">${viewMode ? '✎ 編輯模式' : '👁 檢視模式'}</button>
+      <button class="btn-delete-map" onclick="deleteIndustry()">刪除產業地圖</button>
+    </div>
+
+    ${viewMode ? renderReadView() : renderEditView()}
+
+    <div class="card">
+      <div class="card-title">9. 覆蓋股票 <span class="hint">此產業地圖下的個股框架分析</span></div>
+      <div id="companiesList"></div>
+      <button class="btn-add-row" onclick="addCoverageStock()">+ 加入覆蓋股票</button>
+    </div>
+  `;
+  renderCompanies();
+}
+
+loadIndustryList();
+</script>
+</body>
+</html>

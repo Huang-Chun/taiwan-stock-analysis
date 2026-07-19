@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>觀察總覽 - 台股供應鏈研究系統</title>
+<style>
+:root {
+  --bg: #0d1117; --bg2: #161b22; --bg3: #21262d;
+  --border: #30363d; --text: #e6edf3; --muted: #8b949e;
+  --green: #3fb950; --red: #f85149; --yellow: #e3b341; --orange: #f0883e;
+  --blue: #58a6ff; --purple: #bc8cff; --radius: 8px;
+}
+*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Microsoft JhengHei', sans-serif; font-size: 14px; }
+
+.topbar { display:flex; align-items:center; gap:16px; padding:10px 20px; background:var(--bg2); border-bottom:1px solid var(--border); position:sticky; top:0; z-index:100; }
+.topbar a { color:var(--blue); text-decoration:none; font-size:13px; font-weight:600; }
+.topbar .title { font-weight:700; font-size:15px; }
+.topbar nav { margin-left:auto; display:flex; gap:14px; align-items:center; }
+.topbar nav a { color:var(--muted); font-weight:400; }
+.topbar nav a:hover { color:var(--text); }
+
+.page { max-width:1180px; margin:0 auto; padding:28px 24px 80px; }
+
+.btn-sync { background:var(--blue); border:none; color:#fff; border-radius:6px; padding:7px 16px; font-size:13px; cursor:pointer; font-weight:600; }
+.btn-sync:hover { opacity:.9; }
+.btn-sync:disabled { opacity:.5; cursor:not-allowed; }
+
+.section { margin-bottom:28px; }
+.section-title { font-size:13px; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:.06em; margin-bottom:12px; display:flex; align-items:center; gap:10px; }
+.section-title .hint { font-weight:400; text-transform:none; letter-spacing:0; color:#5a6a7a; font-size:11px; }
+
+.run-meta { font-size:12px; color:var(--muted); margin-bottom:14px; }
+.run-meta .status-done { color:var(--green); }
+.run-meta .status-failed { color:var(--red); }
+.run-meta .status-running { color:var(--yellow); }
+
+/* per-industry block */
+.industry-block { margin-bottom:18px; background:var(--bg2); border:1px solid var(--border); border-radius:var(--radius); overflow:hidden; }
+.industry-header { padding:10px 14px; background:var(--bg3); font-size:13px; font-weight:700; color:var(--blue); display:flex; align-items:center; gap:8px; }
+.industry-header .count { font-weight:400; color:var(--muted); font-size:11px; }
+
+/* table-layout:fixed + 固定欄寬，讓每個產業區塊的表格欄位彼此對齊，不會因為內容長短各自跑掉 */
+table.dtable { width:100%; border-collapse:collapse; table-layout:fixed; }
+table.dtable th { text-align:left; font-size:11px; color:var(--muted); padding:7px 12px; border-bottom:1px solid var(--border); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+table.dtable td { padding:8px 12px; border-bottom:1px solid var(--border); font-size:12.5px; vertical-align:top; overflow-wrap:break-word; }
+table.dtable tr:last-child td { border-bottom:none; }
+table.dtable .stock-id { font-family:monospace; color:var(--muted); }
+
+table.stock-table th:nth-child(1), table.stock-table td:nth-child(1) { width:7%; }
+table.stock-table th:nth-child(2), table.stock-table td:nth-child(2) { width:9%; }
+table.stock-table th:nth-child(3), table.stock-table td:nth-child(3) { width:12%; }
+table.stock-table th:nth-child(4), table.stock-table td:nth-child(4) { width:19%; }
+table.stock-table th:nth-child(5), table.stock-table td:nth-child(5) { width:19%; }
+table.stock-table th:nth-child(6), table.stock-table td:nth-child(6) { width:19%; }
+table.stock-table th:nth-child(7), table.stock-table td:nth-child(7) { width:15%; }
+
+/* 倒數急迫度：只有真的快到、或確認過官方日期才上色，平常不亮燈，避免整頁都是綠燈
+   優先順序：紅(≤3天，不論官方與否) > 橘(官方確認日期，還不急) > 黃(推算，4~14天) > 無色 */
+.dot { display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:5px; vertical-align:middle; flex-shrink:0; }
+.dot.urgent { background:var(--red); }
+.dot.official { background:var(--orange); }
+.dot.soon { background:var(--yellow); }
+.next-date { display:flex; align-items:baseline; gap:4px; flex-wrap:wrap; white-space:nowrap; }
+.next-date .days { color:var(--muted); font-size:11px; }
+.next-date.urgent .days { color:var(--red); font-weight:600; }
+.next-date.official .days { color:var(--orange); font-weight:600; }
+.next-date.soon .days { color:var(--yellow); font-weight:600; }
+.price-cell { color:var(--muted); font-size:12px; }
+
+.mtag { display:inline-block; font-size:10.5px; padding:1px 7px; border-radius:8px; margin-right:4px; margin-bottom:2px; }
+.mtag.attention { background:rgba(227,179,65,0.15); color:var(--yellow); }
+.mtag.self_disclosure { background:rgba(248,81,73,0.15); color:var(--red); }
+.mtag.earnings_schedule, .mtag.earnings_announced { background:rgba(88,166,255,0.15); color:var(--blue); }
+.mtag.earnings_call { background:rgba(188,140,255,0.15); color:var(--purple); }
+.mtag-none { color:#3a4552; font-size:11px; }
+
+.change-list { display:flex; flex-direction:column; gap:8px; }
+.change-card { background:var(--bg2); border:1px solid var(--border); border-radius:8px; padding:12px 14px; display:flex; align-items:center; gap:12px; }
+.change-card.significant { border-color:rgba(227,179,65,0.5); background:rgba(227,179,65,0.05); }
+.change-card .flag { font-size:14px; }
+.change-card .body { flex:1; }
+.change-card .headline { font-size:13px; }
+.change-card .headline .stock { font-family:monospace; color:var(--muted); margin-right:6px; }
+.change-card .headline .metric { font-weight:600; }
+.change-card .values { font-size:12px; color:var(--muted); margin-top:2px; }
+.change-card .values .arrow { margin:0 4px; }
+.change-card .values .new { color:var(--text); font-weight:600; }
+.change-card .badge-new { font-size:10px; padding:1px 7px; border-radius:8px; background:rgba(88,166,255,0.15); color:var(--blue); }
+
+.announce-card { background:var(--bg2); border:1px solid var(--border); border-radius:8px; padding:10px 14px; margin-bottom:8px; font-size:12.5px; }
+.announce-card .head { display:flex; align-items:center; gap:8px; margin-bottom:4px; }
+.announce-card .date { color:var(--muted); font-size:11px; }
+.announce-card .subject { color:var(--muted); line-height:1.5; white-space:pre-line; }
+
+.empty { color:var(--muted); padding:20px; text-align:center; font-size:13px; }
+.toggle-link { color:var(--blue); font-size:12px; cursor:pointer; background:none; border:none; padding:0; }
+
+/* 圖例 */
+.legend { background:var(--bg2); border:1px solid var(--border); border-radius:var(--radius); padding:14px 18px; margin-bottom:24px; font-size:12.5px; }
+.legend-title { font-size:11px; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:.06em; margin-bottom:10px; }
+.legend-row { display:flex; align-items:flex-start; gap:10px; margin-bottom:6px; line-height:1.6; }
+.legend-row:last-child { margin-bottom:0; }
+.legend-row .lg-key { flex-shrink:0; min-width:110px; }
+.legend-row .lg-desc { color:var(--muted); }
+.legend-divider { border-top:1px solid var(--border); margin:10px 0; }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <a href="/">← 台股供應鏈研究系統</a>
+  <span class="title">觀察總覽</span>
+  <nav>
+    <a href="/industry.html">產業地圖</a>
+    <a href="/sectors.html">產業分類</a>
+    <a href="/api.html">API</a>
+    <button class="btn-sync" id="syncBtn" onclick="triggerSync()">↻ 立即同步</button>
+  </nav>
+</div>
+
+<div class="page">
+  <div class="legend">
+    <div class="legend-title">圖例與顯示邏輯</div>
+    <div class="legend-row">
+      <span class="lg-key"><span class="dot urgent"></span>紅點</span>
+      <span class="lg-desc">距離下一次預期公布(月營收/財報/法說會) ≤ 3 天——不論是否官方確認，最優先，真的要留意了</span>
+    </div>
+    <div class="legend-row">
+      <span class="lg-key"><span class="dot official"></span>橘點</span>
+      <span class="lg-desc">日期是公司自己公告的實際董事會/會議日期(不是法定截止日推算)，還不到3天內但已確認會發生——法說會一定是這個顏色，因為它本來就沒有「推算」這回事</span>
+    </div>
+    <div class="legend-row">
+      <span class="lg-key"><span class="dot soon"></span>黃點</span>
+      <span class="lg-desc">距離下一次預期公布 4~14 天，但只是用法定截止日推算的，公司還沒自己公告確切日期</span>
+    </div>
+    <div class="legend-row">
+      <span class="lg-key">無顏色</span>
+      <span class="lg-desc">距離下一次預期公布 &gt; 14 天，或尚無公告資訊——不需要現在關注，故意不上色以免整頁都是燈號</span>
+    </div>
+    <div class="legend-divider"></div>
+    <div class="legend-row">
+      <span class="lg-key"><span class="mtag attention">注意股</span></span>
+      <span class="lg-desc">股價異常波動被交易所列入注意名單——真正的風險/異常訊號</span>
+    </div>
+    <div class="legend-row">
+      <span class="lg-key"><span class="mtag self_disclosure">公佈自結</span></span>
+      <span class="lg-desc">因股價異常波動達標準，被要求公佈自結財務數字——真正的風險/異常訊號</span>
+    </div>
+    <div class="legend-divider"></div>
+    <div class="legend-row">
+      <span class="lg-key">股價欄位</span>
+      <span class="lg-desc">僅顯示日期，不套用燈號——框架不以股價當結論依據，這欄純參考</span>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">本週待公布 <span class="hint">未來7天內會公布月營收或財報的覆蓋股票 · 見上方圖例</span></div>
+    <div id="upcoming"></div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">待更新總覽 <span class="hint">按產業分區塊 · 每天 20:00 自動同步 · 綠點=新鮮 紅點=過期，另顯示下一次預期公布日</span></div>
+    <div id="staleness"></div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">近期法說會 <span class="hint">例行揭露排程，近14天，僅覆蓋清單</span></div>
+    <div id="earningsCalls"></div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">近期重大訊息 <span class="hint">真正的風險/異常訊號：注意股清單 / 因股價異常波動被要求公佈自結損益（近14天，僅覆蓋清單）</span></div>
+    <div id="announcements"></div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">上次同步 <span class="hint">這次更新抓到什麼值</span></div>
+    <div class="run-meta" id="runMeta"></div>
+    <div id="significantChanges"></div>
+    <div style="margin-top:10px;">
+      <button class="toggle-link" id="toggleAllChanges" onclick="toggleAllChanges()">顯示完整清單</button>
+    </div>
+    <div id="allChanges" style="display:none; margin-top:10px;"></div>
+  </div>
+</div>
+
+<script>
+const METRIC_LABELS = {
+  monthly_revenue: '月營收',
+  revenue_yoy: '營收年增率',
+  gross_margin: '毛利率',
+  operating_margin: '營益率',
+  roe: 'ROE',
+};
+const ANNOUNCE_LABELS = { attention: '注意股', self_disclosure: '公佈自結', earnings_schedule: '財報排程公告', earnings_announced: '財報已決議', earnings_call: '法說會' };
+
+function esc(s) { return (s ?? '').toString().replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+function fmtValue(metric, v) {
+  if (v == null) return '—';
+  if (metric === 'monthly_revenue') return (v / 1e8).toFixed(2) + ' 億';
+  return (v >= 0 ? '+' : '') + v.toFixed(2) + '%';
+}
+
+// 倒數急迫度：只有真的快到才上色提醒，平常不亮燈（避免滿版都是綠燈）
+function daysUntil(dateStr) {
+  if (!dateStr) return null;
+  const today = new Date(new Date().toISOString().slice(0, 10));
+  const target = new Date(dateStr);
+  return Math.round((target - today) / 86400000);
+}
+// 優先順序：紅(≤3天，不論官方與否) > 橘(官方確認日期，還不急) > 黃(推算，4~14天) > 無色
+function urgencyClass(days, source) {
+  if (days != null && days <= 3) return 'urgent';
+  if (source === 'official') return 'official';
+  if (days != null && days <= 14) return 'soon';
+  return '';
+}
+function daysLabel(days) {
+  if (days == null) return '';
+  if (days < 0) return `已過${Math.abs(days)}天`;
+  if (days === 0) return '今天';
+  return `${days}天後`;
+}
+
+// 月營收 / 財報 共用：只顯示「下一次預期公布」，急迫或官方確認時才亮燈（顏色本身就代表意義，不再疊文字標籤）
+// 「有沒有歷史資料」跟「知不知道下次何時公布」是兩件獨立的事，不能讓前者擋住後者
+function nextEventCell(meta, next) {
+  if (!next) return meta && meta.has_data ? '—' : '<span class="mtag-none">尚無資料</span>';
+  const days = daysUntil(next.expected_date);
+  const cls = urgencyClass(days, next.source);
+  const dot = cls ? `<span class="dot ${cls}"></span>` : '';
+  return `<div class="next-date ${cls}">${dot}${esc(next.period)} · ${esc(next.expected_date)} <span class="days">(${daysLabel(days)})</span></div>`;
+}
+
+// 股價僅供參考，框架不以此為結論依據，不需要急迫度燈號，純顯示日期
+function priceCell(meta) {
+  if (!meta || !meta.has_data) return '<span class="mtag-none">無資料</span>';
+  return `<span class="price-cell">${esc(meta.latest_date)}</span>`;
+}
+
+// 法說會日期一定來自官方公告(沒有推算的概念)，除非在3天內急迫，否則一律亮橘燈
+function earningsCallCell(call) {
+  if (!call) return '<span class="mtag-none">尚無公告</span>';
+  const days = daysUntil(call.expected_date);
+  const cls = urgencyClass(days, 'official');
+  const dot = cls ? `<span class="dot ${cls}"></span>` : '';
+  return `<div class="next-date ${cls}">${dot}${esc(call.period || '')} · ${esc(call.expected_date)} <span class="days">(${daysLabel(days)})</span></div>`;
+}
+
+function announceTags(list) {
+  if (!list || !list.length) return '<span class="mtag-none">—</span>';
+  const seen = new Set();
+  const tags = [];
+  for (const a of list) {
+    if (seen.has(a.category)) continue;
+    seen.add(a.category);
+    tags.push(`<span class="mtag ${a.category}">${ANNOUNCE_LABELS[a.category] || a.category}</span>`);
+  }
+  return tags.join('');
+}
+
+async function loadUpcoming() {
+  const r = await fetch('/api/dashboard/upcoming?days=7');
+  const j = await r.json();
+  const el = document.getElementById('upcoming');
+  if (!j.success) return;
+  if (!j.data.length) { el.innerHTML = '<div class="empty">未來7天內覆蓋清單沒有預期要公布的月營收或財報</div>'; return; }
+
+  el.innerHTML = `
+    <table class="dtable" style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);">
+      <tr><th>預計日期</th><th>剩餘天數</th><th>股號</th><th>名稱</th><th>產業</th><th>公布項目</th><th>期間</th><th>來源</th></tr>
+      ${j.data.map(u => {
+        const cls = urgencyClass(u.days_until, u.source);
+        const dot = cls ? `<span class="dot ${cls}"></span>` : '';
+        return `
+        <tr>
+          <td>${esc(u.expected_date)}</td>
+          <td class="next-date ${cls}">${dot}<span class="days">${daysLabel(u.days_until)}</span></td>
+          <td class="stock-id">${esc(u.stock_id)}</td>
+          <td>${esc(u.stock_name)}</td>
+          <td>${esc(u.industry_name || '未分類')}</td>
+          <td>${esc(u.metric)}</td>
+          <td>${esc(u.period)}</td>
+          <td>${u.source === 'official' ? '<span class="mtag earnings_schedule">官方公告</span>' : '<span class="mtag-none">推算</span>'}</td>
+        </tr>
+      `;
+      }).join('')}
+    </table>
+  `;
+}
+
+async function loadStaleness() {
+  const r = await fetch('/api/dashboard');
+  const j = await r.json();
+  if (!j.success) return;
+
+  const el = document.getElementById('staleness');
+  if (!j.industries.length) { el.innerHTML = '<div class="empty">尚無覆蓋股票</div>'; return; }
+
+  el.innerHTML = j.industries.map(ind => `
+    <div class="industry-block">
+      <div class="industry-header">${esc(ind.name)} <span class="count">${ind.stocks.length} 檔</span></div>
+      <table class="dtable stock-table">
+        <tr><th>股號</th><th>名稱</th><th>股價</th><th>月營收</th><th>財報</th><th>法說會</th><th>重大訊息</th></tr>
+        ${ind.stocks.map(s => `
+          <tr>
+            <td class="stock-id">${esc(s.stock_id)}</td>
+            <td>${esc(s.stock_name)}</td>
+            <td>${priceCell(s.freshness.price)}</td>
+            <td>${nextEventCell(s.freshness.revenue, s.next_revenue)}</td>
+            <td>${nextEventCell(s.freshness.financial, s.next_financial)}</td>
+            <td>${earningsCallCell(s.next_earnings_call)}</td>
+            <td>${announceTags(s.recent_announcements)}</td>
+          </tr>
+        `).join('')}
+      </table>
+    </div>
+  `).join('');
+}
+
+function renderAnnounceCards(elId, list, emptyMsg) {
+  const el = document.getElementById(elId);
+  if (!list.length) { el.innerHTML = `<div class="empty">${emptyMsg}</div>`; return; }
+  el.innerHTML = list.map(a => `
+    <div class="announce-card">
+      <div class="head">
+        <span class="mtag ${a.category}">${ANNOUNCE_LABELS[a.category] || a.category}</span>
+        <strong>${esc(a.stock_id)} ${esc(a.stock_name)}</strong>
+        <span class="date">${esc(a.event_date || a.announced_date)}</span>
+      </div>
+      <div class="subject">${esc(a.subject)}</div>
+    </div>
+  `).join('');
+}
+
+async function loadAnnouncements() {
+  const r = await fetch('/api/material-announcements?days=14&coverage_only=true&categories=attention,self_disclosure');
+  const j = await r.json();
+  if (!j.success) return;
+  renderAnnounceCards('announcements', j.data, '近14天沒有覆蓋清單相關的注意股或自結公告');
+}
+
+async function loadEarningsCalls() {
+  const r = await fetch('/api/material-announcements?days=14&coverage_only=true&categories=earnings_call');
+  const j = await r.json();
+  if (!j.success) return;
+  renderAnnounceCards('earningsCalls', j.data, '近14天沒有覆蓋清單相關的法說會公告');
+}
+
+function changeCard(c) {
+  const oldStr = fmtValue(c.metric, c.old_value != null ? parseFloat(c.old_value) : null);
+  const newStr = fmtValue(c.metric, c.new_value != null ? parseFloat(c.new_value) : null);
+  return `
+    <div class="change-card ${c.is_significant ? 'significant' : ''}">
+      <span class="flag">${c.is_significant ? '🔔' : '　'}</span>
+      <div class="body">
+        <div class="headline">
+          <span class="stock">${esc(c.stock_id)}</span>
+          <span>${esc(c.stock_name)}</span>
+          · <span class="metric">${METRIC_LABELS[c.metric] || c.metric}</span>
+          （${esc(c.period)}）
+          ${c.is_new ? '<span class="badge-new">新資料</span>' : ''}
+        </div>
+        <div class="values">${oldStr}<span class="arrow">→</span><span class="new">${newStr}</span></div>
+      </div>
+    </div>`;
+}
+
+let allChangesData = [];
+
+async function loadLatestRun() {
+  const r = await fetch('/api/sync-runs/latest');
+  const j = await r.json();
+  if (!j.success) return;
+
+  const meta = document.getElementById('runMeta');
+  if (!j.run) {
+    meta.textContent = '尚未執行過同步';
+    document.getElementById('significantChanges').innerHTML = '';
+    return;
+  }
+
+  const statusLabel = { done: '完成', failed: '失敗', running: '執行中' }[j.run.status] || j.run.status;
+  meta.innerHTML = `第 ${j.run.id} 次同步 · <span class="status-${j.run.status}">${statusLabel}</span> · 開始於 ${j.run.started_at}${j.run.finished_at ? ' · 結束於 ' + j.run.finished_at : ''}${j.run.error_message ? ' · 錯誤: ' + esc(j.run.error_message) : ''}`;
+
+  allChangesData = j.changes || [];
+  const significant = allChangesData.filter(c => c.is_significant);
+
+  document.getElementById('significantChanges').innerHTML = significant.length
+    ? `<div class="change-list">${significant.map(changeCard).join('')}</div>`
+    : '<div class="empty">這次同步沒有需要特別留意的變化</div>';
+
+  renderAllChanges();
+}
+
+function renderAllChanges() {
+  const el = document.getElementById('allChanges');
+  el.innerHTML = allChangesData.length
+    ? `<div class="change-list">${allChangesData.map(changeCard).join('')}</div>`
+    : '<div class="empty">尚無資料</div>';
+}
+
+function toggleAllChanges() {
+  const el = document.getElementById('allChanges');
+  const btn = document.getElementById('toggleAllChanges');
+  const showing = el.style.display !== 'none';
+  el.style.display = showing ? 'none' : 'block';
+  btn.textContent = showing ? '顯示完整清單' : '收合完整清單';
+}
+
+async function triggerSync() {
+  const btn = document.getElementById('syncBtn');
+  btn.disabled = true;
+  btn.textContent = '↻ 同步中...';
+  try {
+    const r = await fetch('/api/admin/daily-sync', { method: 'POST' });
+    const j = await r.json();
+    if (!j.success) throw new Error(j.error);
+    await Promise.all([loadUpcoming(), loadStaleness(), loadEarningsCalls(), loadAnnouncements(), loadLatestRun()]);
+  } catch (e) {
+    alert('同步失敗：' + e.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '↻ 立即同步';
+  }
+}
+
+loadUpcoming();
+loadStaleness();
+loadEarningsCalls();
+loadAnnouncements();
+loadLatestRun();
+</script>
+</body>
+</html>

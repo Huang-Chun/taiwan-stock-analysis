@@ -600,7 +600,7 @@ async function fetchAllStocksLatestPrices() {
  * @param {function} onProgress - 進度 callback(done, total, stockId)
  */
 async function syncAllStocksHistory(months = 6, onProgress = null) {
-  months = Math.min(Math.max(1, months), 12);
+  months = Math.min(Math.max(1, months), 120); // 最多 10 年
   const now = new Date();
 
   const startD = new Date(now.getFullYear(), now.getMonth() - months + 1, 1);

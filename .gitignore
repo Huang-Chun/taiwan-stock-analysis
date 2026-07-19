@@ -21,3 +21,7 @@ Thumbs.db
 # 暫存檔案
 tmp/
 temp/
+
+# 資料庫備份（太大，不進 git；框架資料改用 data/*.json 快照）
+taiwan_stock_backup.sql
+*.sql.bak

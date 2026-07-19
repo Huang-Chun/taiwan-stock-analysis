@@ -54,7 +54,7 @@ function buildMeta({ latest_date, stale_days, frequency, sync_api }) {
 }
 
 /**
- * 股價 / 技術指標 / 三大法人 / 融資融券（trade_date 類）
+ * 股價（僅供參考價，非框架核心資料）
  */
 async function getPriceFreshness(stockId) {
   const latest = await latestTradeDate('daily_prices', stockId);
@@ -66,38 +66,8 @@ async function getPriceFreshness(stockId) {
   });
 }
 
-async function getIndicatorFreshness(stockId) {
-  const latest = await latestTradeDate('technical_indicators', stockId);
-  return buildMeta({
-    latest_date: latest,
-    stale_days: 5,
-    frequency: '每個交易日（依賴 daily_prices）',
-    sync_api: 'calculate_indicators',
-  });
-}
-
-async function getInstitutionalFreshness(stockId) {
-  const latest = await latestTradeDate('institutional_trading', stockId);
-  return buildMeta({
-    latest_date: latest,
-    stale_days: 5,
-    frequency: '每個交易日',
-    sync_api: 'sync_institutional_trading',
-  });
-}
-
-async function getMarginFreshness(stockId) {
-  const latest = await latestTradeDate('margin_trading', stockId);
-  return buildMeta({
-    latest_date: latest,
-    stale_days: 5,
-    frequency: '每個交易日',
-    sync_api: 'sync_margin_trading',
-  });
-}
-
 /**
- * 月營收（year + month 欄位）
+ * 月營收（year + month 欄位）——框架的主要覆盤觸發點
  */
 async function getRevenueFreshness(stockId) {
   const sql = stockId
@@ -141,28 +111,8 @@ async function getFinancialFreshness(stockId) {
   });
 }
 
-/**
- * 股利（dividends）
- */
-async function getDividendFreshness(stockId) {
-  const sql = stockId
-    ? 'SELECT MAX(ex_dividend_date) AS latest FROM dividends WHERE stock_id = ?'
-    : 'SELECT MAX(ex_dividend_date) AS latest FROM dividends';
-  const [rows] = await pool.query(sql, stockId ? [stockId] : []);
-  return buildMeta({
-    latest_date: rows[0]?.latest ?? null,
-    stale_days: 90,
-    frequency: '每年（除息日為基準）',
-    sync_api: 'sync_dividends',
-  });
-}
-
 module.exports = {
   getPriceFreshness,
-  getIndicatorFreshness,
-  getInstitutionalFreshness,
-  getMarginFreshness,
   getRevenueFreshness,
   getFinancialFreshness,
-  getDividendFreshness,
 };

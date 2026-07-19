@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>API 文件 - 台股分析系統</title>
+<title>API 文件 - 台股供應鏈研究系統</title>
 <style>
 :root {
   --bg: #0d1117; --bg2: #161b22; --bg3: #21262d;
@@ -67,10 +67,9 @@ body { background: var(--bg); color: var(--text); font-family: -apple-system, Bl
   display: inline-block; padding: 1px 7px; border-radius: 10px;
   font-size: 11px; font-weight: 600; margin-left: 6px; vertical-align: middle;
 }
-.tag.tech  { background: rgba(88,166,255,0.15); color: var(--blue); }
-.tag.chip  { background: rgba(240,160,112,0.15); color: var(--orange); }
 .tag.fund  { background: rgba(63,185,80,0.15); color: var(--green); }
 .tag.admin { background: rgba(188,140,255,0.15); color: var(--purple); }
+.tag.framework { background: rgba(88,166,255,0.15); color: var(--blue); }
 
 .params {
   margin-top: 6px; font-size: 11px; color: #5a6a7a;
@@ -81,17 +80,16 @@ body { background: var(--bg); color: var(--text); font-family: -apple-system, Bl
 <body>
 
 <nav class="nav">
-  <a href="/" class="nav-brand">台股分析</a>
-  <a href="/chart.html">K線圖</a>
-  <a href="/screen.html">策略篩選</a>
-  <a href="/backtest.html">回測</a>
-  <a href="/sectors.html">產業</a>
+  <a href="/" class="nav-brand">台股供應鏈研究</a>
+  <a href="/industry.html">產業地圖</a>
+  <a href="/dashboard.html">觀察總覽</a>
+  <a href="/sectors.html">產業分類</a>
   <a href="/api.html" class="active">API</a>
 </nav>
 
 <div class="page">
   <div class="page-title">API 文件</div>
-  <div class="page-sub">Taiwan Stock Analysis — REST API Reference</div>
+  <div class="page-sub">Taiwan Stock Supply-Chain Research System — REST API Reference</div>
 
   <!-- 基本資料 -->
   <div class="section">
@@ -115,14 +113,14 @@ body { background: var(--bg); color: var(--text); font-family: -apple-system, Bl
         <span class="method get">GET</span>
         <div class="ep-body">
           <div class="ep-path">/api/stocks/:id/prices</div>
-          <div class="ep-desc">歷史股價<span class="params">?limit=30</span></div>
+          <div class="ep-desc">歷史股價（僅供參考價）<span class="params">?limit=30</span></div>
         </div>
       </div>
       <div class="ep">
         <span class="method get">GET</span>
         <div class="ep-body">
           <div class="ep-path">/api/stocks/:id/latest</div>
-          <div class="ep-desc">最新股價＋全部技術指標</div>
+          <div class="ep-desc">最新參考股價（不含技術指標）</div>
         </div>
       </div>
       <div class="ep">
@@ -135,92 +133,148 @@ body { background: var(--bg); color: var(--text); font-family: -apple-system, Bl
     </div>
   </div>
 
-  <!-- 技術面 -->
+  <!-- 供應鏈框架：產業地圖 -->
   <div class="section">
-    <div class="section-label">技術面 <span class="tag tech">Tech</span></div>
+    <div class="section-label">供應鏈框架 — 產業地圖 <span class="tag framework">Framework</span></div>
     <div class="ep-list">
       <div class="ep">
         <span class="method get">GET</span>
         <div class="ep-body">
-          <div class="ep-path">/api/stocks/:id/indicators</div>
-          <div class="ep-desc">技術指標歷史序列</div>
+          <div class="ep-path">/api/industries</div>
+          <div class="ep-desc">所有產業地圖清單</div>
         </div>
       </div>
       <div class="ep">
         <span class="method get">GET</span>
         <div class="ep-body">
-          <div class="ep-path">/api/stocks/:id/kline</div>
-          <div class="ep-desc">K線圖完整資料</div>
+          <div class="ep-path">/api/industries/:id</div>
+          <div class="ep-desc">產業地圖完整內容（六層+護城河+因果線+矩陣+假設）</div>
         </div>
       </div>
       <div class="ep">
-        <span class="method get">GET</span>
+        <span class="method post">POST</span>
         <div class="ep-body">
-          <div class="ep-path">/api/stocks/:id/signals</div>
-          <div class="ep-desc">交易訊號偵測（黃金交叉、RSI、MACD…）</div>
+          <div class="ep-path">/api/industries</div>
+          <div class="ep-desc">新增產業地圖<span class="params">body: { name, tech_background_notes, taiwan_participation_notes, customer_relationship_notes, open_gaps }</span></div>
         </div>
       </div>
       <div class="ep">
-        <span class="method get">GET</span>
+        <span class="method post">PUT</span>
         <div class="ep-body">
-          <div class="ep-path">/api/stocks/:id/score</div>
-          <div class="ep-desc">綜合評分 0–100</div>
+          <div class="ep-path">/api/industries/:id</div>
+          <div class="ep-desc">更新產業地圖基本欄位</div>
         </div>
       </div>
       <div class="ep">
-        <span class="method get">GET</span>
+        <span class="method post">DELETE</span>
         <div class="ep-body">
-          <div class="ep-path">/api/analysis/screen</div>
-          <div class="ep-desc">技術指標篩選<span class="params">?rsi_min &rsi_max &ma_position &volume_min &kd_golden_cross &macd_positive &adx_min</span></div>
+          <div class="ep-path">/api/industries/:id</div>
+          <div class="ep-desc">刪除產業地圖（個股會保留但取消關聯）</div>
         </div>
       </div>
       <div class="ep">
-        <span class="method get">GET</span>
+        <span class="method post">PUT</span>
         <div class="ep-body">
-          <div class="ep-path">/api/analysis/screen/strategy/:name</div>
-          <div class="ep-desc">策略篩選<span class="params">name: golden_cross | rsi_oversold | macd_golden_cross | volume_breakout | bollinger_squeeze</span></div>
+          <div class="ep-path">/api/industries/:id/layers</div>
+          <div class="ep-desc">六層供應鏈地圖，整批覆寫<span class="params">body: { layers: [{layer, players, scarcity_source, moat_level, key_structure}] }</span></div>
         </div>
       </div>
       <div class="ep">
-        <span class="method get">GET</span>
+        <span class="method post">PUT</span>
         <div class="ep-body">
-          <div class="ep-path">/api/backtest</div>
-          <div class="ep-desc">策略回測<span class="params">?stockId &strategy &startDate &endDate</span></div>
+          <div class="ep-path">/api/industries/:id/causal-lines</div>
+          <div class="ep-desc">三條因果線，整批覆寫<span class="params">body: { causal_lines: [{line_type, assessment, evidence}] }</span></div>
+        </div>
+      </div>
+      <div class="ep">
+        <span class="method post">PUT</span>
+        <div class="ep-body">
+          <div class="ep-path">/api/industries/:id/matrix</div>
+          <div class="ep-desc">主題中性矩陣，整批覆寫<span class="params">body: { cells: [{stock_id, product_line, application, note}] }</span></div>
+        </div>
+      </div>
+      <div class="ep">
+        <span class="method post">POST</span>
+        <div class="ep-body">
+          <div class="ep-path">/api/industries/:id/hypotheses</div>
+          <div class="ep-desc">新增可證偽假設</div>
+        </div>
+      </div>
+      <div class="ep">
+        <span class="method post">PUT</span>
+        <div class="ep-body">
+          <div class="ep-path">/api/industries/:id/hypotheses/:hid</div>
+          <div class="ep-desc">更新假設內容/狀態</div>
+        </div>
+      </div>
+      <div class="ep">
+        <span class="method post">DELETE</span>
+        <div class="ep-body">
+          <div class="ep-path">/api/industries/:id/hypotheses/:hid</div>
+          <div class="ep-desc">刪除假設</div>
         </div>
       </div>
     </div>
   </div>
 
-  <!-- 籌碼面 -->
+  <!-- 供應鏈框架：個股框架 -->
   <div class="section">
-    <div class="section-label">籌碼面 <span class="tag chip">Chip</span></div>
+    <div class="section-label">供應鏈框架 — 個股框架 <span class="tag framework">Framework</span></div>
     <div class="ep-list">
       <div class="ep">
         <span class="method get">GET</span>
         <div class="ep-body">
-          <div class="ep-path">/api/stocks/:id/institutional</div>
-          <div class="ep-desc">法人買賣超趨勢分析</div>
+          <div class="ep-path">/api/stocks/:id/profile</div>
+          <div class="ep-desc">個股框架分類（護城河、客戶關係型態、因果線、假設、事件日誌）</div>
+        </div>
+      </div>
+      <div class="ep">
+        <span class="method post">PUT</span>
+        <div class="ep-body">
+          <div class="ep-path">/api/stocks/:id/profile</div>
+          <div class="ep-desc">寫入個股框架分類。is_coverage_active 決定 FinMind 財報/月營收爬蟲抓不抓這檔</div>
+        </div>
+      </div>
+      <div class="ep">
+        <span class="method post">PUT</span>
+        <div class="ep-body">
+          <div class="ep-path">/api/stocks/:id/causal-lines</div>
+          <div class="ep-desc">三條因果線在個股的具體展現，整批覆寫</div>
         </div>
       </div>
       <div class="ep">
         <span class="method get">GET</span>
         <div class="ep-body">
-          <div class="ep-path">/api/stocks/:id/institutional/daily</div>
-          <div class="ep-desc">法人每日明細</div>
+          <div class="ep-path">/api/stocks/:id/hypotheses</div>
+          <div class="ep-desc">個股層級可證偽假設清單</div>
+        </div>
+      </div>
+      <div class="ep">
+        <span class="method post">POST</span>
+        <div class="ep-body">
+          <div class="ep-path">/api/stocks/:id/hypotheses</div>
+          <div class="ep-desc">新增個股假設</div>
         </div>
       </div>
       <div class="ep">
         <span class="method get">GET</span>
         <div class="ep-body">
-          <div class="ep-path">/api/stocks/:id/margin</div>
-          <div class="ep-desc">融資融券分析</div>
+          <div class="ep-path">/api/stocks/:id/events</div>
+          <div class="ep-desc">事件日誌（財報公布/法說會/guidance/關鍵結構改變）</div>
+        </div>
+      </div>
+      <div class="ep">
+        <span class="method post">POST</span>
+        <div class="ep-body">
+          <div class="ep-path">/api/stocks/:id/events</div>
+          <div class="ep-desc">新增事件<span class="params">body: { event_date, event_desc, affected_hypothesis, impact_on_judgment }</span></div>
         </div>
       </div>
       <div class="ep">
         <span class="method get">GET</span>
         <div class="ep-body">
-          <div class="ep-path">/api/analysis/screen/institutional</div>
-          <div class="ep-desc">法人篩選<span class="params">?foreign_net_min &trust_net_min &days</span></div>
+          <div class="ep-path">/api/coverage</div>
+          <div class="ep-desc">目前的框架覆蓋清單（is_coverage_active=1），也是 FinMind 抓取範圍</div>
         </div>
       </div>
     </div>
@@ -297,28 +351,63 @@ body { background: var(--bg); color: var(--text); font-family: -apple-system, Bl
         <span class="method post">POST</span>
         <div class="ep-body">
           <div class="ep-path">/api/admin/sync</div>
-          <div class="ep-desc">一鍵同步（股票清單、股價、法人、融資、月營收）<span class="params">body: { tasks: ['stocks','prices','institutional','margin','revenue'] }</span></div>
+          <div class="ep-desc">一鍵同步（SSE streaming）：全市場參考股價（近2個月）+ 覆蓋清單財報（近4季）+ 覆蓋清單月營收</div>
+        </div>
+      </div>
+      <div class="ep">
+        <span class="method post">POST</span>
+        <div class="ep-body">
+          <div class="ep-path">/api/admin/sync-history</div>
+          <div class="ep-desc">補歷史參考股價（SSE streaming）<span class="params">body: { months: 1-120 }</span></div>
+        </div>
+      </div>
+      <div class="ep">
+        <span class="method post">POST</span>
+        <div class="ep-body">
+          <div class="ep-path">/api/admin/daily-sync</div>
+          <div class="ep-desc">手動觸發每日自動同步（跟 cron 排程同一函式）：股價+覆蓋清單月營收/財報，並偵測數字變化寫入 data_change_log</div>
         </div>
       </div>
     </div>
   </div>
 
-  <!-- AI -->
+  <!-- 觀察總覽 -->
   <div class="section">
-    <div class="section-label">AI 分析</div>
+    <div class="section-label">觀察總覽 <span class="tag framework">Framework</span></div>
     <div class="ep-list">
       <div class="ep">
-        <span class="method post">POST</span>
+        <span class="method get">GET</span>
         <div class="ep-body">
-          <div class="ep-path">/api/ai/analyze</div>
-          <div class="ep-desc">個股 AI 分析（SSE streaming）<span class="params">body: { stockId, stockName, context }</span></div>
+          <div class="ep-path">/api/dashboard</div>
+          <div class="ep-desc">覆蓋清單所有股票依產業分組，含資料新鮮度、下一次月營收/財報預期公布日(財報優先採官方公告日期)、近期重大訊息標記</div>
         </div>
       </div>
       <div class="ep">
-        <span class="method post">POST</span>
+        <span class="method get">GET</span>
         <div class="ep-body">
-          <div class="ep-path">/api/chat</div>
-          <div class="ep-desc">多輪 AI 對話（SSE streaming）<span class="params">body: { messages, stockContext }</span></div>
+          <div class="ep-path">/api/dashboard/upcoming</div>
+          <div class="ep-desc">未來N天內覆蓋清單哪些股票要公布月營收/財報/法說會<span class="params">?days=7</span></div>
+        </div>
+      </div>
+      <div class="ep">
+        <span class="method get">GET</span>
+        <div class="ep-body">
+          <div class="ep-path">/api/sync-runs/latest</div>
+          <div class="ep-desc">最近一次同步偵測到的數字變化清單<span class="params">?run_id= 可指定特定一次</span></div>
+        </div>
+      </div>
+      <div class="ep">
+        <span class="method get">GET</span>
+        <div class="ep-body">
+          <div class="ep-path">/api/sync-runs</div>
+          <div class="ep-desc">近期同步執行紀錄（最多20筆）</div>
+        </div>
+      </div>
+      <div class="ep">
+        <span class="method get">GET</span>
+        <div class="ep-body">
+          <div class="ep-path">/api/material-announcements</div>
+          <div class="ep-desc">官方重大訊息：注意股清單、公佈自結、財報董事會日期(排程/已決議)、法說會排程<span class="params">?days=14 &coverage_only=true</span></div>
         </div>
       </div>
     </div>

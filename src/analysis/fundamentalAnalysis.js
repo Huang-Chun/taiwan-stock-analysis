@@ -50,7 +50,7 @@ async function analyzeRevenueTrend(stockId, months = 12) {
 }
 
 /**
- * 估值指標計算（PE/PB/殖利率）
+ * 估值指標計算（PE/PB，僅供參考，框架不以此為結論依據）
  */
 async function calculateValuation(stockId) {
   // 取得最新股價
@@ -69,7 +69,6 @@ async function calculateValuation(stockId) {
     trade_date: priceRows[0].trade_date,
     pe_ratio: null,
     pb_ratio: null,
-    dividend_yield: null,
     eps_ttm: null,
     book_value: null
   };
@@ -103,21 +102,6 @@ async function calculateValuation(stockId) {
     result.book_value = bv;
     if (bv > 0) {
       result.pb_ratio = (price / bv).toFixed(2);
-    }
-  }
-
-  // 殖利率
-  const [divRows] = await pool.query(
-    `SELECT cash_dividend FROM dividends
-     WHERE stock_id = ?
-     ORDER BY year DESC LIMIT 1`,
-    [stockId]
-  );
-
-  if (divRows.length > 0) {
-    const cashDiv = parseFloat(divRows[0].cash_dividend) || 0;
-    if (cashDiv > 0 && price > 0) {
-      result.dividend_yield = (cashDiv / price * 100).toFixed(2);
     }
   }
 
@@ -172,67 +156,6 @@ async function analyzeEPSTrend(stockId) {
 }
 
 /**
- * 基本面綜合評分 (0-100)
- */
-async function scoreFundamental(stockId) {
-  let score = 50;
-  const details = {};
-
-  // 營收趨勢
-  const revenue = await analyzeRevenueTrend(stockId, 6);
-  if (revenue) {
-    const yoy = parseFloat(revenue.latest_yoy);
-    if (!isNaN(yoy)) {
-      if (yoy > 20) score += 15;
-      else if (yoy > 10) score += 10;
-      else if (yoy > 0) score += 5;
-      else if (yoy > -10) score -= 5;
-      else score -= 10;
-    }
-    details.revenue_yoy = yoy;
-    details.revenue_momentum = revenue.momentum;
-  }
-
-  // EPS
-  const eps = await analyzeEPSTrend(stockId);
-  if (eps) {
-    const epsTTM = parseFloat(eps.eps_ttm);
-    if (epsTTM > 0) score += 5;
-    if (eps.yoy_growth.length > 0) {
-      const lastGrowth = parseFloat(eps.yoy_growth[eps.yoy_growth.length - 1].yoy_growth);
-      if (lastGrowth > 20) score += 10;
-      else if (lastGrowth > 0) score += 5;
-      else score -= 5;
-    }
-    details.eps_ttm = epsTTM;
-    details.eps_trend = eps.trend;
-  }
-
-  // 估值
-  const valuation = await calculateValuation(stockId);
-  if (valuation) {
-    const pe = parseFloat(valuation.pe_ratio);
-    if (!isNaN(pe)) {
-      if (pe > 0 && pe < 12) score += 10;      // 低本益比
-      else if (pe >= 12 && pe < 20) score += 5; // 合理
-      else if (pe >= 30) score -= 5;             // 偏高
-    }
-
-    const dy = parseFloat(valuation.dividend_yield);
-    if (!isNaN(dy) && dy > 5) score += 5;
-
-    details.pe_ratio = pe;
-    details.dividend_yield = dy;
-  }
-
-  return {
-    stock_id: stockId,
-    score: Math.max(0, Math.min(100, Math.round(score))),
-    details
-  };
-}
-
-/**
  * 取得財報摘要
  */
 async function getFinancialSummary(stockId) {
@@ -262,6 +185,5 @@ module.exports = {
   analyzeRevenueTrend,
   calculateValuation,
   analyzeEPSTrend,
-  scoreFundamental,
   getFinancialSummary
 };

@@ -3,22 +3,22 @@ const { StdioServerTransport } = require('@modelcontextprotocol/sdk/server/stdio
 const { z } = require('zod');
 const { pool } = require('../database/connection');
 const { fetchAllStockLists } = require('../crawler/fetchStockList');
-const { fetchRecentPrices, fetchBatchDailyPrices, fetchMultiMonthPrices, fetchAllStocksLatestPrices, syncAllStocksHistory } = require('../crawler/fetchDailyPrices');
-const { calculateIndicatorsForStock, calculateAllIndicators } = require('../analysis/calculateIndicators');
-const { fetchAndSaveInstitutionalTrading, fetchRecentInstitutionalTrading, fetchAndSaveInstitutionalTradingForStock } = require('../crawler/fetchInstitutionalTrading');
-const { fetchAndSaveMarginTrading, fetchRecentMarginTrading } = require('../crawler/fetchMarginTrading');
+const { fetchBatchDailyPrices, fetchMultiMonthPrices, fetchAllStocksLatestPrices, syncAllStocksHistory } = require('../crawler/fetchDailyPrices');
 const { fetchAndSaveMonthlyRevenue, fetchRecentMonthlyRevenue } = require('../crawler/fetchMonthlyRevenue');
-const { fetchAndSaveFinancialStatements, fetchRecentFinancialStatements, getLatestAvailableQuarters } = require('../crawler/fetchFinancialStatements');
-const { fetchAndSaveDividends, fetchRecentDividends } = require('../crawler/fetchDividends');
-const { detectAllSignals, scoreStock, screenByStrategy } = require('../analysis/strategies');
-const { analyzeInstitutionalTrend, detectAccumulation, analyzeConsensus, analyzeMarginTrend, screenByInstitutional } = require('../analysis/institutionalAnalysis');
-const { analyzeRevenueTrend, calculateValuation, getFinancialSummary, scoreFundamental } = require('../analysis/fundamentalAnalysis');
-const { getPriceFreshness, getIndicatorFreshness, getInstitutionalFreshness, getMarginFreshness, getRevenueFreshness, getFinancialFreshness, getDividendFreshness } = require('../utils/dataFreshness');
+const { fetchAndSaveFinancialStatements, getLatestAvailableQuarters } = require('../crawler/fetchFinancialStatements');
+const { analyzeRevenueTrend, calculateValuation, getFinancialSummary } = require('../analysis/fundamentalAnalysis');
+const { getPriceFreshness, getRevenueFreshness, getFinancialFreshness } = require('../utils/dataFreshness');
 
 const server = new McpServer({
   name: 'taiwan-stock-analysis',
-  version: '2.0.0',
+  version: '3.0.0',
 });
+
+const LAYER_ENUM = ['設備', '原材料', '關鍵材料', '零組件製造', '模組整合', '終端產品'];
+const MOAT_SOURCE_ENUM = ['地理稀缺性', '製程精度+BOM鎖定', '製程know-how稀缺性'];
+const RELATIONSHIP_ENUM = ['規格驗證型', '架構共同開發型'];
+const SUPPLIER_ENUM = ['多供應商', '單一綁定'];
+const LAYER_ORDER_SQL = "FIELD(layer,'設備','原材料','關鍵材料','零組件製造','模組整合','終端產品')";
 
 // ============================================
 // 查詢類 Tools
@@ -70,7 +70,7 @@ server.tool(
 
 server.tool(
   'get_stock_prices',
-  '取得股票歷史股價資料',
+  '取得股票歷史股價資料（僅供參考價，框架不以此為結論依據）',
   {
     stock_id: z.string().describe('股票代號,例如 2330'),
     limit: z.number().optional().default(30).describe('回傳筆數,預設 30'),
@@ -93,7 +93,7 @@ server.tool(
 
 server.tool(
   'get_stock_latest',
-  '取得股票最新股價與技術指標（MA、RSI、MACD、KD、布林通道、VWAP、ATR、ADX、Williams %R、OBV）',
+  '取得股票最新參考股價（僅價格，不含技術指標——框架不使用技術面）',
   { stock_id: z.string().describe('股票代號,例如 2330') },
   async ({ stock_id }) => {
     try {
@@ -101,16 +101,9 @@ server.tool(
         `SELECT
           s.stock_id, s.stock_name, s.industry,
           dp.trade_date, dp.close_price, dp.open_price, dp.high_price, dp.low_price,
-          dp.volume, dp.change_amount, dp.change_percent,
-          ti.ma5, ti.ma10, ti.ma20, ti.ma60, ti.rsi,
-          ti.macd, ti.macd_signal, ti.macd_histogram,
-          ti.kd_k, ti.kd_d,
-          ti.bollinger_upper, ti.bollinger_middle, ti.bollinger_lower,
-          ti.vwap, ti.atr, ti.adx, ti.plus_di, ti.minus_di, ti.williams_r, ti.obv
+          dp.volume, dp.change_amount, dp.change_percent
         FROM stocks s
         LEFT JOIN daily_prices dp ON s.stock_id = dp.stock_id
-        LEFT JOIN technical_indicators ti ON s.stock_id = ti.stock_id
-          AND dp.trade_date = ti.trade_date
         WHERE s.stock_id = ?
         ORDER BY dp.trade_date DESC
         LIMIT 1`,
@@ -120,112 +113,8 @@ server.tool(
       if (rows.length === 0) {
         return { content: [{ type: 'text', text: `找不到股票 ${stock_id} 的資料` }], isError: true };
       }
-      const [price_meta, indicator_meta] = await Promise.all([
-        getPriceFreshness(stock_id),
-        getIndicatorFreshness(stock_id),
-      ]);
-      return { content: [{ type: 'text', text: JSON.stringify({ _meta: { price_meta, indicator_meta }, ...rows[0] }, null, 2) }] };
-    } catch (error) {
-      return { content: [{ type: 'text', text: `錯誤: ${error.message}` }], isError: true };
-    }
-  }
-);
-
-server.tool(
-  'screen_stocks',
-  '依技術指標篩選股票（RSI、均線位置、成交量、KD、MACD、ADX 等）',
-  {
-    rsi_min: z.number().optional().describe('RSI 最小值'),
-    rsi_max: z.number().optional().describe('RSI 最大值'),
-    ma_position: z.enum(['above', 'below']).optional().describe('收盤價相對 MA20 位置：above（站上）或 below（跌破）'),
-    volume_min: z.number().optional().describe('最小成交量'),
-    kd_golden_cross: z.boolean().optional().describe('篩選 K > D 的股票'),
-    macd_positive: z.boolean().optional().describe('篩選 MACD 柱狀圖 > 0 的股票'),
-    adx_min: z.number().optional().describe('ADX 最小值（趨勢強度）'),
-  },
-  async ({ rsi_min, rsi_max, ma_position, volume_min, kd_golden_cross, macd_positive, adx_min }) => {
-    try {
-      let query = `
-        SELECT
-          s.stock_id, s.stock_name, dp.close_price, dp.change_percent, dp.volume,
-          ti.rsi, ti.ma5, ti.ma20, ti.kd_k, ti.kd_d, ti.macd_histogram, ti.adx
-        FROM stocks s
-        JOIN daily_prices dp ON s.stock_id = dp.stock_id
-        JOIN technical_indicators ti ON s.stock_id = ti.stock_id
-          AND dp.trade_date = ti.trade_date
-        WHERE dp.trade_date = (
-          SELECT MAX(trade_date) FROM daily_prices WHERE stock_id = s.stock_id
-        )
-      `;
-      const params = [];
-
-      if (rsi_min !== undefined) { query += ' AND ti.rsi >= ?'; params.push(rsi_min); }
-      if (rsi_max !== undefined) { query += ' AND ti.rsi <= ?'; params.push(rsi_max); }
-      if (ma_position === 'above') query += ' AND dp.close_price > ti.ma20';
-      else if (ma_position === 'below') query += ' AND dp.close_price < ti.ma20';
-      if (volume_min !== undefined) { query += ' AND dp.volume >= ?'; params.push(volume_min); }
-      if (kd_golden_cross) query += ' AND ti.kd_k > ti.kd_d';
-      if (macd_positive) query += ' AND ti.macd_histogram > 0';
-      if (adx_min !== undefined) { query += ' AND ti.adx >= ?'; params.push(adx_min); }
-
-      query += ' ORDER BY dp.change_percent DESC LIMIT 50';
-
-      const [rows] = await pool.query(query, params);
-      return {
-        content: [{ type: 'text', text: JSON.stringify({ count: rows.length, data: rows }, null, 2) }],
-      };
-    } catch (error) {
-      return { content: [{ type: 'text', text: `錯誤: ${error.message}` }], isError: true };
-    }
-  }
-);
-
-// ============================================
-// 籌碼面查詢 Tools
-// ============================================
-
-server.tool(
-  'get_institutional_trading',
-  '查看指定股票的三大法人買賣超資料與趨勢分析',
-  {
-    stock_id: z.string().describe('股票代號'),
-    days: z.number().optional().default(20).describe('分析天數,預設 20'),
-  },
-  async ({ stock_id, days }) => {
-    try {
-      const [trend, consensus, accumulation, _meta] = await Promise.all([
-        analyzeInstitutionalTrend(stock_id, days),
-        analyzeConsensus(stock_id),
-        detectAccumulation(stock_id),
-        getInstitutionalFreshness(stock_id),
-      ]);
-
-      return {
-        content: [{ type: 'text', text: JSON.stringify({ _meta, trend, consensus, accumulation }, null, 2) }],
-      };
-    } catch (error) {
-      return { content: [{ type: 'text', text: `錯誤: ${error.message}` }], isError: true };
-    }
-  }
-);
-
-server.tool(
-  'get_margin_trading',
-  '查看指定股票的融資融券資料與趨勢分析',
-  {
-    stock_id: z.string().describe('股票代號'),
-    days: z.number().optional().default(20).describe('分析天數,預設 20'),
-  },
-  async ({ stock_id, days }) => {
-    try {
-      const [result, _meta] = await Promise.all([
-        analyzeMarginTrend(stock_id, days),
-        getMarginFreshness(stock_id),
-      ]);
-      if (!result) {
-        return { content: [{ type: 'text', text: JSON.stringify({ _meta, error: `找不到股票 ${stock_id} 的融資融券資料` }, null, 2) }] };
-      }
-      return { content: [{ type: 'text', text: JSON.stringify({ _meta, ...result }, null, 2) }] };
+      const price_meta = await getPriceFreshness(stock_id);
+      return { content: [{ type: 'text', text: JSON.stringify({ _meta: { price_meta }, ...rows[0] }, null, 2) }] };
     } catch (error) {
       return { content: [{ type: 'text', text: `錯誤: ${error.message}` }], isError: true };
     }
@@ -238,7 +127,7 @@ server.tool(
 
 server.tool(
   'get_monthly_revenue',
-  '查看指定股票的月營收資料與成長趨勢',
+  '查看指定股票的月營收資料與成長趨勢（框架的主要覆盤觸發點）',
   {
     stock_id: z.string().describe('股票代號'),
     months: z.number().optional().default(12).describe('查看月數,預設 12'),
@@ -278,20 +167,19 @@ server.tool(
 
 server.tool(
   'get_valuation',
-  '查看指定股票的估值指標（本益比 PE、股價淨值比 PB、殖利率）',
+  '查看指定股票的估值指標（本益比 PE、股價淨值比 PB，僅供參考）',
   { stock_id: z.string().describe('股票代號') },
   async ({ stock_id }) => {
     try {
-      const [result, price_meta, financial_meta, dividend_meta] = await Promise.all([
+      const [result, price_meta, financial_meta] = await Promise.all([
         calculateValuation(stock_id),
         getPriceFreshness(stock_id),
         getFinancialFreshness(stock_id),
-        getDividendFreshness(stock_id),
       ]);
       if (!result) {
         return { content: [{ type: 'text', text: `找不到股票 ${stock_id} 的估值資料` }] };
       }
-      return { content: [{ type: 'text', text: JSON.stringify({ _meta: { price_meta, financial_meta, dividend_meta }, ...result }, null, 2) }] };
+      return { content: [{ type: 'text', text: JSON.stringify({ _meta: { price_meta, financial_meta }, ...result }, null, 2) }] };
     } catch (error) {
       return { content: [{ type: 'text', text: `錯誤: ${error.message}` }], isError: true };
     }
@@ -299,23 +187,53 @@ server.tool(
 );
 
 // ============================================
-// 分析類 Tools
+// 供應鏈研究框架 — 產業地圖 Tools
+// 六層供應鏈骨架 / 護城河分類 / 三條因果線 / 主題中性矩陣 / 可證偽假設
 // ============================================
 
 server.tool(
-  'detect_signals',
-  '偵測指定股票的交易訊號（黃金交叉、RSI 超賣反彈、MACD 交叉、量能突破、布林通道突破）',
-  { stock_id: z.string().describe('股票代號') },
-  async ({ stock_id }) => {
+  'list_industry_maps',
+  '列出所有已建立的產業地圖',
+  {},
+  async () => {
     try {
-      const signals = await detectAllSignals(stock_id);
-      return {
-        content: [{ type: 'text', text: JSON.stringify({
-          stock_id,
-          signal_count: signals.length,
-          signals
-        }, null, 2) }],
-      };
+      const [rows] = await pool.query('SELECT id, name, created_at, updated_at FROM industry_maps ORDER BY name');
+      return { content: [{ type: 'text', text: JSON.stringify({ count: rows.length, data: rows }, null, 2) }] };
+    } catch (error) {
+      return { content: [{ type: 'text', text: `錯誤: ${error.message}` }], isError: true };
+    }
+  }
+);
+
+async function loadIndustryMap(identifier) {
+  const [[map]] = /^\d+$/.test(identifier)
+    ? await pool.query('SELECT * FROM industry_maps WHERE id = ?', [identifier])
+    : await pool.query('SELECT * FROM industry_maps WHERE name = ?', [identifier]);
+  if (!map) return null;
+
+  const [layers] = await pool.query(`SELECT * FROM industry_map_layers WHERE industry_map_id = ? ORDER BY ${LAYER_ORDER_SQL}`, [map.id]);
+  const [causalLines] = await pool.query('SELECT * FROM industry_map_causal_lines WHERE industry_map_id = ?', [map.id]);
+  const [matrix] = await pool.query('SELECT * FROM industry_map_matrix_cells WHERE industry_map_id = ? ORDER BY id', [map.id]);
+  const [hypotheses] = await pool.query('SELECT * FROM industry_map_hypotheses WHERE industry_map_id = ? ORDER BY sort_order, id', [map.id]);
+  const [terms] = await pool.query('SELECT * FROM industry_map_terms WHERE industry_map_id = ? ORDER BY sort_order, id', [map.id]);
+  const [companies] = await pool.query(
+    `SELECT cp.stock_id, s.stock_name, cp.layer, cp.moat_source, cp.moat_level, cp.relationship_type, cp.v1_judgment
+     FROM company_profiles cp JOIN stocks s ON cp.stock_id = s.stock_id
+     WHERE cp.industry_map_id = ? ORDER BY cp.stock_id`, [map.id]
+  );
+
+  return { ...map, layers, causal_lines: causalLines, matrix, hypotheses, terms, companies };
+}
+
+server.tool(
+  'get_industry_map',
+  '取得單一產業地圖的完整內容（六層供應鏈、護城河、三條因果線、主題中性矩陣、可證偽假設、名詞解釋、覆蓋股票清單）',
+  { name_or_id: z.string().describe('產業地圖名稱（例如「功率元件」）或數字 id') },
+  async ({ name_or_id }) => {
+    try {
+      const data = await loadIndustryMap(name_or_id);
+      if (!data) return { content: [{ type: 'text', text: `找不到產業地圖「${name_or_id}」` }], isError: true };
+      return { content: [{ type: 'text', text: JSON.stringify(data, null, 2) }] };
     } catch (error) {
       return { content: [{ type: 'text', text: `錯誤: ${error.message}` }], isError: true };
     }
@@ -323,32 +241,161 @@ server.tool(
 );
 
 server.tool(
-  'score_stock',
-  '對指定股票進行綜合評分（技術面 + 基本面,0-100分）',
-  { stock_id: z.string().describe('股票代號') },
-  async ({ stock_id }) => {
+  'save_industry_map',
+  '一次寫入完整產業地圖（六層供應鏈+護城河+三條因果線+主題中性矩陣+可證偽假設）。' +
+  '依 name 尋找或建立產業地圖；layers/causal_lines/matrix/hypotheses 若有提供則整批覆寫（不是逐筆新增）。',
+  {
+    name: z.string().describe('產業地圖名稱，例如「功率元件」'),
+    tech_background_notes: z.string().optional().describe('前置技術背景'),
+    taiwan_participation_notes: z.string().optional().describe('台灣參與度總覽'),
+    customer_relationship_notes: z.string().optional().describe('客戶關係類型學檢視'),
+    open_gaps: z.string().optional().describe('待確認事項'),
+    layers: z.array(z.object({
+      layer: z.enum(LAYER_ENUM),
+      players: z.string().optional(),
+      scarcity_source: z.string().optional(),
+      moat_level: z.string().optional(),
+      key_structure: z.string().optional(),
+    })).optional().describe('六層供應鏈地圖表格，整批覆寫'),
+    causal_lines: z.array(z.object({
+      line_type: z.enum(['supply', 'demand', 'inventory']),
+      assessment: z.string().optional(),
+      evidence: z.string().optional(),
+    })).optional().describe('三條因果線分析，整批覆寫'),
+    matrix: z.array(z.object({
+      stock_id: z.string().optional(),
+      product_line: z.string().optional(),
+      application: z.string().optional(),
+      note: z.string().optional(),
+    })).optional().describe('主題中性矩陣（公司×產品×應用），整批覆寫'),
+    hypotheses: z.array(z.object({
+      hypothesis: z.string(),
+      falsifying_observation: z.string().optional(),
+      current_status: z.string().optional(),
+    })).optional().describe('可證偽假設清單，整批覆寫'),
+    terms: z.array(z.object({
+      term: z.string(),
+      definition: z.string().optional(),
+    })).optional().describe('名詞解釋（避免後面表格出現名詞混用），整批覆寫'),
+  },
+  async ({ name, tech_background_notes, taiwan_participation_notes, customer_relationship_notes, open_gaps, layers, causal_lines, matrix, hypotheses, terms }) => {
+    const conn = await pool.getConnection();
     try {
-      const technical = await scoreStock(stock_id);
-      const fundamental = await scoreFundamental(stock_id);
+      await conn.beginTransaction();
 
-      const combined = {
-        stock_id,
-        technical_score: technical ? technical.score : null,
-        fundamental_score: fundamental ? fundamental.score : null,
-        total_score: null,
-        technical_details: technical ? technical.indicators : null,
-        fundamental_details: fundamental ? fundamental.details : null
-      };
-
-      if (technical && fundamental) {
-        combined.total_score = Math.round(technical.score * 0.5 + fundamental.score * 0.5);
-      } else if (technical) {
-        combined.total_score = technical.score;
-      } else if (fundamental) {
-        combined.total_score = fundamental.score;
+      const [[existing]] = await conn.query('SELECT * FROM industry_maps WHERE name = ?', [name]);
+      let industryMapId;
+      if (existing) {
+        industryMapId = existing.id;
+        // 只覆寫這次呼叫真的有帶的欄位；沒帶的欄位沿用既有值，避免局部更新把其他欄位清空
+        const mTech = tech_background_notes !== undefined ? tech_background_notes : existing.tech_background_notes;
+        const mTaiwan = taiwan_participation_notes !== undefined ? taiwan_participation_notes : existing.taiwan_participation_notes;
+        const mCustomer = customer_relationship_notes !== undefined ? customer_relationship_notes : existing.customer_relationship_notes;
+        const mGaps = open_gaps !== undefined ? open_gaps : existing.open_gaps;
+        await conn.query(
+          `UPDATE industry_maps SET tech_background_notes=?, taiwan_participation_notes=?,
+           customer_relationship_notes=?, open_gaps=? WHERE id=?`,
+          [mTech || null, mTaiwan || null, mCustomer || null, mGaps || null, industryMapId]
+        );
+      } else {
+        const [r] = await conn.query(
+          `INSERT INTO industry_maps (name, tech_background_notes, taiwan_participation_notes, customer_relationship_notes, open_gaps)
+           VALUES (?,?,?,?,?)`,
+          [name, tech_background_notes || null, taiwan_participation_notes || null, customer_relationship_notes || null, open_gaps || null]
+        );
+        industryMapId = r.insertId;
       }
 
-      return { content: [{ type: 'text', text: JSON.stringify(combined, null, 2) }] };
+      if (layers) {
+        await conn.query('DELETE FROM industry_map_layers WHERE industry_map_id = ?', [industryMapId]);
+        for (const [i, l] of layers.entries()) {
+          await conn.query(
+            `INSERT INTO industry_map_layers (industry_map_id, layer, players, scarcity_source, moat_level, key_structure, sort_order)
+             VALUES (?,?,?,?,?,?,?)`,
+            [industryMapId, l.layer, l.players || null, l.scarcity_source || null, l.moat_level || null, l.key_structure || null, i]
+          );
+        }
+      }
+
+      if (causal_lines) {
+        await conn.query('DELETE FROM industry_map_causal_lines WHERE industry_map_id = ?', [industryMapId]);
+        for (const c of causal_lines) {
+          await conn.query(
+            `INSERT INTO industry_map_causal_lines (industry_map_id, line_type, assessment, evidence) VALUES (?,?,?,?)`,
+            [industryMapId, c.line_type, c.assessment || null, c.evidence || null]
+          );
+        }
+      }
+
+      if (matrix) {
+        await conn.query('DELETE FROM industry_map_matrix_cells WHERE industry_map_id = ?', [industryMapId]);
+        for (const c of matrix) {
+          await conn.query(
+            `INSERT INTO industry_map_matrix_cells (industry_map_id, stock_id, product_line, application, note)
+             VALUES (?,?,?,?,?)`,
+            [industryMapId, c.stock_id || null, c.product_line || null, c.application || null, c.note || null]
+          );
+        }
+      }
+
+      if (hypotheses) {
+        await conn.query('DELETE FROM industry_map_hypotheses WHERE industry_map_id = ?', [industryMapId]);
+        for (const [i, h] of hypotheses.entries()) {
+          await conn.query(
+            `INSERT INTO industry_map_hypotheses (industry_map_id, hypothesis, falsifying_observation, current_status, sort_order)
+             VALUES (?,?,?,?,?)`,
+            [industryMapId, h.hypothesis, h.falsifying_observation || null, h.current_status || null, i]
+          );
+        }
+      }
+
+      if (terms) {
+        await conn.query('DELETE FROM industry_map_terms WHERE industry_map_id = ?', [industryMapId]);
+        for (const [i, t] of terms.entries()) {
+          await conn.query(
+            `INSERT INTO industry_map_terms (industry_map_id, term, definition, sort_order) VALUES (?,?,?,?)`,
+            [industryMapId, t.term, t.definition || null, i]
+          );
+        }
+      }
+
+      await conn.commit();
+      return { content: [{ type: 'text', text: `已儲存產業地圖「${name}」(id=${industryMapId})` }] };
+    } catch (error) {
+      await conn.rollback();
+      return { content: [{ type: 'text', text: `儲存失敗: ${error.message}` }], isError: true };
+    } finally {
+      conn.release();
+    }
+  }
+);
+
+// ============================================
+// 供應鏈研究框架 — 個股層級 Tools
+// 護城河分類 / 客戶關係類型學 / 三條因果線 / 可證偽假設
+// company_profiles.is_coverage_active 同時決定 FinMind 財報/月營收爬蟲的抓取範圍
+// ============================================
+
+server.tool(
+  'get_company_profile',
+  '取得個股的框架分類（護城河、客戶關係型態、三條因果線、可證偽假設、驗證清單、事件日誌）',
+  { stock_id: z.string().describe('股票代號') },
+  async ({ stock_id }) => {
+    try {
+      const [[profile]] = await pool.query(
+        `SELECT cp.*, im.name AS industry_name FROM company_profiles cp
+         LEFT JOIN industry_maps im ON cp.industry_map_id = im.id
+         WHERE cp.stock_id = ?`,
+        [stock_id]
+      );
+      if (!profile) return { content: [{ type: 'text', text: `股票 ${stock_id} 尚未建立框架分類` }], isError: true };
+
+      const [causalLines] = await pool.query('SELECT * FROM company_causal_lines WHERE stock_id = ?', [stock_id]);
+      const [hypotheses] = await pool.query('SELECT * FROM company_hypotheses WHERE stock_id = ? ORDER BY sort_order, id', [stock_id]);
+      const [events] = await pool.query('SELECT * FROM company_events WHERE stock_id = ? ORDER BY event_date DESC', [stock_id]);
+      const [verification] = await pool.query('SELECT * FROM company_verification_items WHERE stock_id = ? ORDER BY sort_order, id', [stock_id]);
+
+      return { content: [{ type: 'text', text: JSON.stringify({ ...profile, causal_lines: causalLines, hypotheses, events, verification_items: verification }, null, 2) }] };
     } catch (error) {
       return { content: [{ type: 'text', text: `錯誤: ${error.message}` }], isError: true };
     }
@@ -356,16 +403,150 @@ server.tool(
 );
 
 server.tool(
-  'screen_by_strategy',
-  '依選股策略篩選股票（golden_cross / rsi_oversold / macd_golden_cross / volume_breakout / bollinger_squeeze）',
+  'save_company_profile',
+  '寫入個股框架分類（護城河、客戶關係型態、v1投資判斷）。causal_lines/hypotheses 若提供則整批覆寫。' +
+  '會將 is_coverage_active 預設為 true——加入這裡的股票之後 FinMind 財報/月營收爬蟲才會抓取。',
   {
-    strategy: z.string().describe('策略名稱: golden_cross, rsi_oversold, macd_golden_cross, volume_breakout, bollinger_squeeze'),
-    rsi_threshold: z.number().optional().default(30).describe('RSI 閾值（僅 rsi_oversold 策略使用）'),
+    stock_id: z.string().describe('股票代號'),
+    industry_map_name: z.string().optional().describe('所屬產業地圖名稱（需已用 save_industry_map 建立）'),
+    layer: z.enum(LAYER_ENUM).optional(),
+    moat_source: z.enum(MOAT_SOURCE_ENUM).optional(),
+    moat_level: z.string().optional(),
+    key_structure_status: z.string().optional(),
+    relationship_type: z.enum(RELATIONSHIP_ENUM).optional(),
+    supplier_multiplicity: z.enum(SUPPLIER_ENUM).optional(),
+    integration_risk_notes: z.string().optional().describe('3-5年整合/替代風險'),
+    v1_judgment: z.string().optional().describe('例如「Fully priced, watchlist not buy」'),
+    v1_reasoning: z.string().optional(),
+    business_notes: z.string().optional().describe('商業模式/競爭力補充'),
+    open_gaps: z.string().optional().describe('待確認事項（個股層級，不要用樂觀假設填補）'),
+    is_coverage_active: z.boolean().optional().describe('不填則沿用既有值；股票第一次建立時預設為 true'),
+    causal_lines: z.array(z.object({
+      line_type: z.enum(['supply', 'demand', 'inventory']),
+      assessment: z.string().optional(),
+      evidence: z.string().optional(),
+    })).optional(),
+    hypotheses: z.array(z.object({
+      hypothesis: z.string(),
+      falsifying_observation: z.string().optional(),
+      current_status: z.string().optional(),
+    })).optional(),
+    verification_items: z.array(z.object({
+      item: z.string().describe('例如「月營收趨勢是否符合假設方向」'),
+      is_checked: z.boolean().optional().default(false),
+    })).optional().describe('驗證清單：用什麼具體財務數字/事件追蹤假設有沒有成立，跟 hypotheses 是不同的東西'),
   },
-  async ({ strategy, rsi_threshold }) => {
+  async ({ stock_id, industry_map_name, layer, moat_source, moat_level, key_structure_status,
+    relationship_type, supplier_multiplicity, integration_risk_notes, v1_judgment, v1_reasoning,
+    business_notes, open_gaps, is_coverage_active, causal_lines, hypotheses, verification_items }) => {
+    const conn = await pool.getConnection();
     try {
-      const result = await screenByStrategy(strategy, { rsi_threshold });
-      return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+      const [stockRows] = await conn.query('SELECT stock_id FROM stocks WHERE stock_id=?', [stock_id]);
+      if (!stockRows.length) return { content: [{ type: 'text', text: `股票代號 ${stock_id} 不存在` }], isError: true };
+
+      // 只覆寫這次呼叫真的有帶的欄位；沒帶的欄位沿用既有值，避免局部更新把其他欄位清空
+      const [[existing]] = await conn.query('SELECT * FROM company_profiles WHERE stock_id=?', [stock_id]);
+
+      let industryMapId = existing ? existing.industry_map_id : null;
+      if (industry_map_name) {
+        const [[im]] = await conn.query('SELECT id FROM industry_maps WHERE name=?', [industry_map_name]);
+        if (!im) return { content: [{ type: 'text', text: `找不到產業地圖「${industry_map_name}」，請先用 save_industry_map 建立` }], isError: true };
+        industryMapId = im.id;
+      }
+
+      const merged = {
+        layer: layer !== undefined ? layer : existing?.layer ?? null,
+        moat_source: moat_source !== undefined ? moat_source : existing?.moat_source ?? null,
+        moat_level: moat_level !== undefined ? moat_level : existing?.moat_level ?? null,
+        key_structure_status: key_structure_status !== undefined ? key_structure_status : existing?.key_structure_status ?? null,
+        relationship_type: relationship_type !== undefined ? relationship_type : existing?.relationship_type ?? null,
+        supplier_multiplicity: supplier_multiplicity !== undefined ? supplier_multiplicity : existing?.supplier_multiplicity ?? null,
+        integration_risk_notes: integration_risk_notes !== undefined ? integration_risk_notes : existing?.integration_risk_notes ?? null,
+        v1_judgment: v1_judgment !== undefined ? v1_judgment : existing?.v1_judgment ?? null,
+        v1_reasoning: v1_reasoning !== undefined ? v1_reasoning : existing?.v1_reasoning ?? null,
+        business_notes: business_notes !== undefined ? business_notes : existing?.business_notes ?? null,
+        open_gaps: open_gaps !== undefined ? open_gaps : existing?.open_gaps ?? null,
+        is_coverage_active: is_coverage_active !== undefined ? is_coverage_active : (existing ? !!existing.is_coverage_active : true),
+      };
+
+      await conn.beginTransaction();
+
+      await conn.query(
+        `INSERT INTO company_profiles
+         (stock_id, industry_map_id, layer, moat_source, moat_level, key_structure_status,
+          relationship_type, supplier_multiplicity, integration_risk_notes,
+          v1_judgment, v1_reasoning, business_notes, open_gaps, is_coverage_active)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+         ON DUPLICATE KEY UPDATE
+         industry_map_id=VALUES(industry_map_id), layer=VALUES(layer), moat_source=VALUES(moat_source),
+         moat_level=VALUES(moat_level), key_structure_status=VALUES(key_structure_status),
+         relationship_type=VALUES(relationship_type), supplier_multiplicity=VALUES(supplier_multiplicity),
+         integration_risk_notes=VALUES(integration_risk_notes), v1_judgment=VALUES(v1_judgment),
+         v1_reasoning=VALUES(v1_reasoning), business_notes=VALUES(business_notes), open_gaps=VALUES(open_gaps),
+         is_coverage_active=VALUES(is_coverage_active)`,
+        [stock_id, industryMapId, merged.layer, merged.moat_source, merged.moat_level,
+         merged.key_structure_status, merged.relationship_type, merged.supplier_multiplicity,
+         merged.integration_risk_notes, merged.v1_judgment, merged.v1_reasoning, merged.business_notes,
+         merged.open_gaps, merged.is_coverage_active]
+      );
+
+      if (causal_lines) {
+        await conn.query('DELETE FROM company_causal_lines WHERE stock_id = ?', [stock_id]);
+        for (const c of causal_lines) {
+          await conn.query(
+            `INSERT INTO company_causal_lines (stock_id, line_type, assessment, evidence) VALUES (?,?,?,?)`,
+            [stock_id, c.line_type, c.assessment || null, c.evidence || null]
+          );
+        }
+      }
+
+      if (hypotheses) {
+        await conn.query('DELETE FROM company_hypotheses WHERE stock_id = ?', [stock_id]);
+        for (const [i, h] of hypotheses.entries()) {
+          await conn.query(
+            `INSERT INTO company_hypotheses (stock_id, hypothesis, falsifying_observation, current_status, sort_order)
+             VALUES (?,?,?,?,?)`,
+            [stock_id, h.hypothesis, h.falsifying_observation || null, h.current_status || null, i]
+          );
+        }
+      }
+
+      if (verification_items) {
+        await conn.query('DELETE FROM company_verification_items WHERE stock_id = ?', [stock_id]);
+        for (const [i, it] of verification_items.entries()) {
+          await conn.query(
+            `INSERT INTO company_verification_items (stock_id, item, is_checked, sort_order) VALUES (?,?,?,?)`,
+            [stock_id, it.item, !!it.is_checked, i]
+          );
+        }
+      }
+
+      await conn.commit();
+      return { content: [{ type: 'text', text: `已儲存 ${stock_id} 的框架分類` }] };
+    } catch (error) {
+      await conn.rollback();
+      return { content: [{ type: 'text', text: `儲存失敗: ${error.message}` }], isError: true };
+    } finally {
+      conn.release();
+    }
+  }
+);
+
+server.tool(
+  'list_coverage',
+  '列出目前的框架覆蓋清單（is_coverage_active=1），也是 FinMind 財報/月營收爬蟲的抓取範圍',
+  {},
+  async () => {
+    try {
+      const [rows] = await pool.query(
+        `SELECT cp.stock_id, s.stock_name, cp.layer, cp.moat_source, cp.moat_level, cp.v1_judgment, im.name AS industry_name
+         FROM company_profiles cp
+         JOIN stocks s ON cp.stock_id = s.stock_id
+         LEFT JOIN industry_maps im ON cp.industry_map_id = im.id
+         WHERE cp.is_coverage_active = 1
+         ORDER BY im.name, cp.stock_id`
+      );
+      return { content: [{ type: 'text', text: JSON.stringify({ count: rows.length, data: rows }, null, 2) }] };
     } catch (error) {
       return { content: [{ type: 'text', text: `錯誤: ${error.message}` }], isError: true };
     }
@@ -373,17 +554,35 @@ server.tool(
 );
 
 server.tool(
-  'screen_by_institutional',
-  '依籌碼面篩選股票（法人買賣超）',
-  {
-    foreign_net_min: z.number().optional().describe('外資累計淨買超最低值（股）'),
-    trust_net_min: z.number().optional().describe('投信累計淨買超最低值（股）'),
-    days: z.number().optional().default(5).describe('累計天數,預設 5'),
-  },
-  async ({ foreign_net_min, trust_net_min, days }) => {
+  'add_coverage_stock',
+  '把股票加入框架覆蓋清單（is_coverage_active=1）。若該股票尚無 company_profiles 資料會建立最基本的一筆。之後 FinMind 財報/月營收爬蟲會抓取這檔股票。',
+  { stock_id: z.string().describe('股票代號') },
+  async ({ stock_id }) => {
     try {
-      const result = await screenByInstitutional({ foreign_net_min, trust_net_min, days });
-      return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+      const [stockRows] = await pool.query('SELECT stock_id FROM stocks WHERE stock_id=?', [stock_id]);
+      if (!stockRows.length) return { content: [{ type: 'text', text: `股票代號 ${stock_id} 不存在` }], isError: true };
+
+      await pool.query(
+        `INSERT INTO company_profiles (stock_id, is_coverage_active) VALUES (?, TRUE)
+         ON DUPLICATE KEY UPDATE is_coverage_active = TRUE`,
+        [stock_id]
+      );
+      return { content: [{ type: 'text', text: `已將 ${stock_id} 加入框架覆蓋清單` }] };
+    } catch (error) {
+      return { content: [{ type: 'text', text: `錯誤: ${error.message}` }], isError: true };
+    }
+  }
+);
+
+server.tool(
+  'remove_coverage_stock',
+  '把股票從框架覆蓋清單移除（is_coverage_active=0），停止 FinMind 財報/月營收爬蟲抓取，但保留既有的框架分類資料',
+  { stock_id: z.string().describe('股票代號') },
+  async ({ stock_id }) => {
+    try {
+      const [r] = await pool.query('UPDATE company_profiles SET is_coverage_active = FALSE WHERE stock_id = ?', [stock_id]);
+      if (r.affectedRows === 0) return { content: [{ type: 'text', text: `股票 ${stock_id} 尚無框架分類資料` }], isError: true };
+      return { content: [{ type: 'text', text: `已將 ${stock_id} 移出框架覆蓋清單` }] };
     } catch (error) {
       return { content: [{ type: 'text', text: `錯誤: ${error.message}` }], isError: true };
     }
@@ -410,7 +609,7 @@ server.tool(
 
 server.tool(
   'sync_daily_prices',
-  '從 TWSE 抓取最新每日股價資料並存入資料庫',
+  '從 TWSE 抓取最新每日股價資料並存入資料庫（僅供參考價）',
   {
     stock_id: z.string().optional().describe('指定股票代號,不填則抓取全市場最新股價'),
     months: z.number().min(1).max(12).optional().describe('往回抓幾個月,預設 1,最大 12'),
@@ -441,7 +640,7 @@ server.tool(
 
 server.tool(
   'sync_history',
-  '智慧補抓全市場歷史股價：當月永遠更新，舊月份只補缺漏，不重複抓取已有資料',
+  '智慧補抓全市場歷史股價（僅供參考價）：當月永遠更新，舊月份只補缺漏，不重複抓取已有資料',
   {
     months: z.number().min(1).max(12).optional().describe('往回幾個月，預設 6'),
   },
@@ -462,79 +661,12 @@ server.tool(
 );
 
 server.tool(
-  'calculate_indicators',
-  '計算技術指標（MA、RSI、MACD、KD、布林通道、VWAP、ATR、ADX、Williams %R、OBV）',
-  {
-    stock_id: z.string().optional().describe('指定股票代號,不填則計算所有股票'),
-  },
-  async ({ stock_id }) => {
-    try {
-      if (stock_id) {
-        await calculateIndicatorsForStock(stock_id);
-        return { content: [{ type: 'text', text: `成功計算股票 ${stock_id} 的技術指標` }] };
-      } else {
-        await calculateAllIndicators();
-        return { content: [{ type: 'text', text: '成功計算所有股票的技術指標' }] };
-      }
-    } catch (error) {
-      return { content: [{ type: 'text', text: `計算失敗: ${error.message}` }], isError: true };
-    }
-  }
-);
-
-server.tool(
-  'sync_institutional_trading',
-  '抓取三大法人買賣超資料。指定 stock_id 時用 FinMind 抓單股多日；否則用 TWSE 抓指定日期全市場',
-  {
-    date: z.string().optional().describe('日期 YYYYMMDD 格式（全市場模式），不填則抓最近交易日'),
-    stock_id: z.string().optional().describe('股票代號，填入時改用 FinMind 抓該股近期資料'),
-    days: z.number().optional().default(60).describe('stock_id 模式下往回幾天（日曆天），預設 60'),
-  },
-  async ({ date, stock_id, days }) => {
-    try {
-      let count;
-      if (stock_id) {
-        count = await fetchAndSaveInstitutionalTradingForStock(stock_id, days);
-      } else if (date) {
-        count = await fetchAndSaveInstitutionalTrading(date);
-      } else {
-        count = await fetchRecentInstitutionalTrading();
-      }
-      return { content: [{ type: 'text', text: `成功同步 ${count} 筆三大法人買賣超資料` }] };
-    } catch (error) {
-      return { content: [{ type: 'text', text: `同步失敗: ${error.message}` }], isError: true };
-    }
-  }
-);
-
-server.tool(
-  'sync_margin_trading',
-  '抓取融資融券資料',
-  {
-    date: z.string().optional().describe('日期 YYYYMMDD 格式,不填則抓取最近交易日'),
-  },
-  async ({ date }) => {
-    try {
-      let count;
-      if (date) {
-        count = await fetchAndSaveMarginTrading(date);
-      } else {
-        count = await fetchRecentMarginTrading();
-      }
-      return { content: [{ type: 'text', text: `成功同步 ${count} 筆融資融券資料` }] };
-    } catch (error) {
-      return { content: [{ type: 'text', text: `同步失敗: ${error.message}` }], isError: true };
-    }
-  }
-);
-
-server.tool(
   'sync_monthly_revenue',
-  '抓取月營收資料',
+  '抓取月營收資料。不指定 stock_id 且不指定年月時，只抓框架覆蓋清單（company_profiles.is_coverage_active=1）',
   {
     year: z.number().optional().describe('西元年,不填則抓取最近月份'),
     month: z.number().optional().describe('月份 1-12'),
-    stock_id: z.string().optional().describe('指定股票代號,不填則抓取全部(很慢)'),
+    stock_id: z.string().optional().describe('指定股票代號,不填則抓取覆蓋清單'),
   },
   async ({ year, month, stock_id }) => {
     try {
@@ -555,11 +687,11 @@ server.tool(
 
 server.tool(
   'sync_financial_statements',
-  '抓取季度財報資料（損益表、財務比率）',
+  '抓取季度財報資料（損益表、財務比率）。不指定 stock_id 且不指定年季時，只抓框架覆蓋清單（company_profiles.is_coverage_active=1）',
   {
     year: z.number().optional().describe('西元年,不填則抓取最近季度'),
     quarter: z.number().optional().describe('季度 1-4'),
-    stock_id: z.string().optional().describe('指定股票代號,不填則抓取全部(免費帳號很慢)'),
+    stock_id: z.string().optional().describe('指定股票代號,不填則抓取覆蓋清單'),
   },
   async ({ year, quarter, stock_id }) => {
     try {
@@ -592,27 +724,6 @@ server.tool(
   }
 );
 
-server.tool(
-  'sync_dividends',
-  '抓取股利除權息資料',
-  {
-    year: z.number().optional().describe('西元年,不填則抓取當年度'),
-  },
-  async ({ year }) => {
-    try {
-      let count;
-      if (year) {
-        count = await fetchAndSaveDividends(year);
-      } else {
-        count = await fetchRecentDividends();
-      }
-      return { content: [{ type: 'text', text: `成功同步 ${count} 筆股利資料` }] };
-    } catch (error) {
-      return { content: [{ type: 'text', text: `同步失敗: ${error.message}` }], isError: true };
-    }
-  }
-);
-
 // ============================================
 // 啟動 MCP Server
 // ============================================
@@ -620,7 +731,7 @@ server.tool(
 async function main() {
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  console.error('台股分析 MCP Server v2.0 已啟動 (stdio 模式)');
+  console.error('台股供應鏈研究系統 MCP Server v3.0 已啟動 (stdio 模式)');
 }
 
 main().catch((error) => {

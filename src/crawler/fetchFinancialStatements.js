@@ -141,14 +141,14 @@ async function fetchFinancialStatements(year, quarter, stockId) {
         const { incomeRows, balanceRows, cashFlowRows } = await fetchThreeDatasets(dateStr);
         allIncome = incomeRows; allBalance = balanceRows; allCashFlow = cashFlowRows;
       } catch (batchErr) {
-        // 免費帳號無法批次抓取，改為逐檔（每檔 3 次 API，1045 檔約需 6 小時）
+        // 免費帳號無法批次抓取，改為逐檔（每檔 3 次 API）。只抓框架覆蓋清單，避免全市場逐檔耗時過長
         console.log(`  批次模式不可用: ${batchErr.message}`);
-        console.log(`  免費帳號將逐檔抓取（速度較慢）。升級 FinMind 帳號可一次抓取全部。`);
+        console.log(`  免費帳號將逐檔抓取覆蓋清單（company_profiles.is_coverage_active = 1）。升級 FinMind 帳號可一次抓取全部。`);
         console.log(`  或使用: node src/crawler/fetchFinancialStatements.js ${year} ${quarter} <股票代號>`);
 
-        const [rows] = await pool.query('SELECT stock_id FROM stocks WHERE is_active = 1 ORDER BY stock_id');
+        const [rows] = await pool.query('SELECT stock_id FROM company_profiles WHERE is_coverage_active = 1 ORDER BY stock_id');
         const stockIds = rows.map(r => r.stock_id);
-        console.log(`  共 ${stockIds.length} 檔，開始抓取...`);
+        console.log(`  共 ${stockIds.length} 檔（覆蓋清單），開始抓取...`);
 
         let consecutiveFails = 0;
         for (let i = 0; i < stockIds.length; i++) {
@@ -192,7 +192,9 @@ async function saveRecords(records) {
   try {
     await connection.beginTransaction();
 
+    let skipped = 0;
     for (const r of records) {
+     try {
       await connection.query(
         `INSERT INTO financial_statements
         (stock_id, year, quarter, report_type, revenue, operating_cost, gross_profit,
@@ -221,23 +223,24 @@ async function saveRecords(records) {
          r.financing_cash_flow, r.free_cash_flow]
       );
 
-      // 計算財務比率
-      const grossMargin = (r.revenue && r.revenue !== 0 && r.gross_profit != null)
-        ? (r.gross_profit / r.revenue * 100) : null;
-      const operatingMargin = (r.revenue && r.revenue !== 0 && r.operating_income != null)
-        ? (r.operating_income / r.revenue * 100) : null;
-      const netMargin = (r.revenue && r.revenue !== 0 && r.net_income != null)
-        ? (r.net_income / r.revenue * 100) : null;
-      const roe = (r.equity && r.equity !== 0 && r.net_income != null)
-        ? (r.net_income / r.equity * 100) : null;
-      const roa = (r.total_assets && r.total_assets !== 0 && r.net_income != null)
-        ? (r.net_income / r.total_assets * 100) : null;
-      const debtRatio = (r.total_assets && r.total_assets !== 0 && r.total_liabilities != null)
-        ? (r.total_liabilities / r.total_assets * 100) : null;
-      const currentRatio = (r.current_liabilities && r.current_liabilities !== 0 && r.current_assets != null)
-        ? (r.current_assets / r.current_liabilities * 100) : null;
-      const debtToEquity = (r.equity && r.equity !== 0 && r.total_liabilities != null)
-        ? (r.total_liabilities / r.equity) : null;
+      // 計算財務比率（clamp 避免極端值超出 DECIMAL 欄位範圍導致整批寫入失敗）
+      const clamp = (val, max) => (val == null ? null : Math.max(-max, Math.min(max, val)));
+      const grossMargin = clamp((r.revenue && r.revenue !== 0 && r.gross_profit != null)
+        ? (r.gross_profit / r.revenue * 100) : null, 999.99);
+      const operatingMargin = clamp((r.revenue && r.revenue !== 0 && r.operating_income != null)
+        ? (r.operating_income / r.revenue * 100) : null, 999.99);
+      const netMargin = clamp((r.revenue && r.revenue !== 0 && r.net_income != null)
+        ? (r.net_income / r.revenue * 100) : null, 999.99);
+      const roe = clamp((r.equity && r.equity !== 0 && r.net_income != null)
+        ? (r.net_income / r.equity * 100) : null, 999.99);
+      const roa = clamp((r.total_assets && r.total_assets !== 0 && r.net_income != null)
+        ? (r.net_income / r.total_assets * 100) : null, 999.99);
+      const debtRatio = clamp((r.total_assets && r.total_assets !== 0 && r.total_liabilities != null)
+        ? (r.total_liabilities / r.total_assets * 100) : null, 999.99);
+      const currentRatio = clamp((r.current_liabilities && r.current_liabilities !== 0 && r.current_assets != null)
+        ? (r.current_assets / r.current_liabilities * 100) : null, 99999999.99);
+      const debtToEquity = clamp((r.equity && r.equity !== 0 && r.total_liabilities != null)
+        ? (r.total_liabilities / r.equity) : null, 99999999.99);
 
       if (grossMargin != null || roe != null) {
         await connection.query(
@@ -254,11 +257,15 @@ async function saveRecords(records) {
            roe, roa, debtRatio, currentRatio, debtToEquity]
         );
       }
+     } catch (rowError) {
+      skipped++;
+      console.error(`  跳過 ${r.stock_id} ${r.year}Q${r.quarter}：${rowError.message}`);
+     }
     }
 
     await connection.commit();
-    console.log(`✓ 成功寫入 ${records.length} 筆財報資料`);
-    return records.length;
+    console.log(`✓ 成功寫入 ${records.length - skipped} 筆財報資料（跳過 ${skipped} 筆異常資料）`);
+    return records.length - skipped;
   } catch (error) {
     await connection.rollback();
     console.error('寫入財報資料失敗:', error.message);
@@ -316,6 +323,29 @@ function getLatestAvailableQuarters(count = 4) {
   return quarters;
 }
 
+/**
+ * 給定某股票目前已有資料的最新季度，推算「下一季」的公告截止日
+ * 台灣財報公告期限：Q1→5/15, Q2→8/14, Q3→11/14, Q4(年報)→隔年3/31
+ * @param {number|null} latestYear
+ * @param {number|null} latestQuarter
+ */
+function getNextQuarterDeadline(latestYear, latestQuarter) {
+  const DEADLINES = { 1: '05-15', 2: '08-14', 3: '11-14', 4: '03-31' };
+
+  let year, quarter;
+  if (!latestYear || !latestQuarter) {
+    // 尚無資料：以目前已可取得的最新一季當基準往下一季推算
+    const [latest] = getLatestAvailableQuarters(1);
+    year = latest.year; quarter = latest.quarter;
+  } else {
+    year = latestYear; quarter = latestQuarter;
+  }
+
+  if (quarter === 4) { year += 1; quarter = 1; } else { quarter += 1; }
+  const deadlineYear = quarter === 4 ? year + 1 : year;
+  return { year, quarter, expected_date: `${deadlineYear}-${DEADLINES[quarter]}` };
+}
+
 async function fetchRecentFinancialStatements() {
   const quarters = getLatestAvailableQuarters(4);
   let total = 0;
@@ -346,5 +376,6 @@ module.exports = {
   fetchFinancialStatements,
   fetchAndSaveFinancialStatements,
   fetchRecentFinancialStatements,
-  getLatestAvailableQuarters
+  getLatestAvailableQuarters,
+  getNextQuarterDeadline
 };

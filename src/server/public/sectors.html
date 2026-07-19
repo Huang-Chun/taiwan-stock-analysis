@@ -260,10 +260,9 @@
     .stock-card {
       background:var(--bg2); border:1px solid var(--border);
       border-radius:var(--radius); padding:12px 14px;
-      cursor:pointer; transition:border-color .15s;
+      transition:border-color .15s;
       position:relative;
     }
-    .stock-card:hover { border-color:var(--blue); }
     .stock-card-remove {
       position:absolute; top:6px; right:6px;
       background:none; border:none; color:var(--muted);
@@ -507,7 +506,7 @@
     }
     .sc-chip {
       font-size: clamp(11px, 1.05vw, 13px); padding: 3px 10px;
-      border-radius: 4px; cursor: pointer;
+      border-radius: 4px;
       background: rgba(56,139,253,.1); border: 1px solid rgba(56,139,253,.22);
       color: #7db9f0; white-space: nowrap;
       transition: background .15s, border-color .15s, color .15s, box-shadow .15s;
@@ -630,8 +629,10 @@
 <body>
 
 <div class="topbar">
-  <a href="/">← 台股分析系統</a>
+  <a href="/">← 台股供應鏈研究系統</a>
   <span class="topbar-title">產業分類</span>
+  <a href="/industry.html" style="margin-left:16px;">產業地圖</a>
+  <a href="/dashboard.html" style="margin-left:12px;">觀察總覽</a>
   <button class="btn-sync" id="syncBtn" onclick="syncAll()">↻ 同步資料</button>
 </div>
 <div id="syncStatus"></div>
@@ -1040,7 +1041,7 @@ function renderSupplyChain(container, data) {
   }
 
   const chipHtml = (stocks) => stocks.map(s =>
-    `<span class="sc-chip" onclick="window.open('/chart.html?stock=${s.id}','_blank')">${s.id} ${esc(s.name)}</span>`
+    `<span class="sc-chip">${s.id} ${esc(s.name)}</span>`
   ).join('');
 
   const tagHtml = (tags) => tags.map(t =>
@@ -1140,7 +1141,6 @@ async function loadStocks() {
   if (sj.success) currentSections = sj.data;
   if (wj.success) currentStocks   = wj.data;
   renderSections();
-  currentStocks.forEach(s => loadScore(s.stock_id));
   // 重繪產業結構圖（以填入 section 對應股票）
   const _chainData = findIndustryMap(currentSub?.name);
   const _chainEl   = document.getElementById('chainContent');
@@ -1221,14 +1221,12 @@ function stockCardHTML(s) {
   return `
     <div class="stock-card" draggable="true"
          ondragstart="onCardDragStart(event,'${s.stock_id}')"
-         ondragend="onCardDragEnd(event)"
-         onclick="goStock('${s.stock_id}')">
+         ondragend="onCardDragEnd(event)">
       <button class="stock-card-remove" onclick="event.stopPropagation();removeStock('${s.stock_id}')" title="移除">✕</button>
       <div class="stock-id">${esc(s.stock_id)}</div>
       <div class="stock-name">${esc(s.stock_name||s.stock_id)}</div>
       <div class="stock-price ${cls}">${price}</div>
       <div class="stock-change ${cls}">${chgStr}</div>
-      <div class="stock-score" id="score-${s.stock_id}">評分 <span>—</span></div>
     </div>`;
 }
 
@@ -1246,7 +1244,6 @@ async function moveStockToSection(stockId, sectionId) {
   if (stock.section_id === sectionId) return;
   stock.section_id = sectionId;
   renderSections();
-  currentStocks.forEach(s => loadScore(s.stock_id));
   await fetch(`/api/sectors/subgroups/${currentSub.id}/stocks/${stockId}/section`, {
     method:'PUT', headers:{'Content-Type':'application/json'},
     body: JSON.stringify({ section_id: sectionId })
@@ -1282,7 +1279,6 @@ function editSectionName(e, sectionId) {
       body: JSON.stringify({ name })
     });
     renderSections();
-    currentStocks.forEach(s => loadScore(s.stock_id));
   };
   input.addEventListener('blur', save);
   input.addEventListener('keydown', e => {
@@ -1297,25 +1293,7 @@ async function deleteSection(sectionId) {
   currentSections = currentSections.filter(s => s.id !== sectionId);
   currentStocks.forEach(s => { if (s.section_id === sectionId) s.section_id = null; });
   renderSections();
-  currentStocks.forEach(s => loadScore(s.stock_id));
 }
-
-/* ─── Score / nav ─── */
-async function loadScore(stockId) {
-  try {
-    const r = await fetch(`/api/stocks/${stockId}/score`);
-    const j = await r.json();
-    const el = document.getElementById(`score-${stockId}`);
-    if (!el) return;
-    const score = j?.score?.total ?? j?.total_score;
-    if (score != null) {
-      const color = score >= 70 ? 'var(--green)' : score >= 50 ? 'var(--yellow)' : 'var(--red)';
-      el.innerHTML = `評分 <span style="color:${color}">${score}</span>`;
-    }
-  } catch {}
-}
-
-function goStock(stockId) { window.open(`/chart.html?id=${stockId}`, '_blank'); }
 
 async function addStock() {
   const input = document.getElementById('addStockInput');
@@ -1402,10 +1380,9 @@ async function syncAll() {
   const btn = document.getElementById('syncBtn');
   const st  = document.getElementById('syncStatus');
   const STEPS = [
-    { key:'prices',        label:'股價' },
-    { key:'institutional', label:'法人' },
-    { key:'margin',        label:'融資券' },
-    { key:'indicators',    label:'技術指標' },
+    { key:'prices',   label:'股價' },
+    { key:'financial', label:'財報（覆蓋清單）' },
+    { key:'revenue',  label:'月營收（覆蓋清單）' },
   ];
   btn.disabled = true; btn.textContent = '↻ 同步中...';
   st.style.display = 'block';
@@ -1448,6 +1425,5 @@ async function syncAll() {
   }
 }
 </script>
-<script src="/chat.js"></script>
 </body>
 </html>

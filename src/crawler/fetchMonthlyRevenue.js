@@ -73,11 +73,11 @@ async function fetchMonthlyRevenue(year, month, stockId) {
         allRows = await fetchFinMindData('TaiwanStockMonthRevenue', dateRange);
       } catch (batchErr) {
         console.log(`  批次模式不可用: ${batchErr.message}`);
-        console.log(`  免費帳號將逐檔抓取。升級 FinMind 帳號可一次抓取全部。`);
+        console.log(`  免費帳號將逐檔抓取覆蓋清單（company_profiles.is_coverage_active = 1）。升級 FinMind 帳號可一次抓取全部。`);
 
-        const [dbRows] = await pool.query('SELECT stock_id FROM stocks WHERE is_active = 1 ORDER BY stock_id');
+        const [dbRows] = await pool.query('SELECT stock_id FROM company_profiles WHERE is_coverage_active = 1 ORDER BY stock_id');
         const stockIds = dbRows.map(r => r.stock_id);
-        console.log(`  共 ${stockIds.length} 檔，開始抓取...`);
+        console.log(`  共 ${stockIds.length} 檔（覆蓋清單），開始抓取...`);
 
         let consecutiveFails = 0;
         for (let i = 0; i < stockIds.length; i++) {
@@ -254,7 +254,8 @@ function subtractMonths(year, month, n) {
  * 抓取月營收，自動偵測歷史缺口並循序補抓
  *
  * - 指定 stockId：查 DB 最新月份，自動補到最新（最多 backfillMonths 個月）
- * - 不指定 stockId（全市場）：只抓最近一個月（維持原行為，避免過慢）
+ * - 不指定 stockId：對框架覆蓋清單（company_profiles.is_coverage_active=1）逐檔重用單股邏輯，
+ *   確保每一檔都各自補到最新，不會被其他檔的完整度掩蓋
  *
  * @param {string} [stockId] - 指定股票代號（可選）
  * @param {number} [backfillMonths=14] - 最多往回補幾個月（預設 14 個月）
@@ -307,42 +308,15 @@ async function fetchRecentMonthlyRevenue(stockId, backfillMonths = 14) {
     return total;
 
   } else {
-    // --- 全市場模式：偵測缺口，循序補抓 ---
-    // 以「有 200 支以上股票」視為完整月份，找最近一次完整月份
-    const [coverageRows] = await pool.query(
-      `SELECT year, month FROM monthly_revenue
-       GROUP BY year, month HAVING COUNT(DISTINCT stock_id) >= 200
-       ORDER BY year DESC, month DESC LIMIT 1`
+    // --- 覆蓋清單模式：逐檔重用單股邏輯，各自偵測缺口並補抓 ---
+    // （原本用「整體 80% 完整度」判斷有沒有缺口，會被其他檔的完整度掩蓋個別股票的缺口——
+    // 例如 20 檔裡只有 1 檔缺當月資料，其餘 19 檔已達 80% 門檻，就永遠不會補到那 1 檔）
+    const [stockRows] = await pool.query(
+      'SELECT stock_id FROM company_profiles WHERE is_coverage_active = 1 ORDER BY stock_id'
     );
-
-    let startYear, startMonth;
-    if (coverageRows.length === 0) {
-      // 從未做過全市場，往回補 backfillMonths 個月
-      [startYear, startMonth] = subtractMonths(targetYear, targetMonth, backfillMonths - 1);
-    } else {
-      // 從最後一次完整月份的下一個月開始
-      startMonth = coverageRows[0].month + 1;
-      startYear  = coverageRows[0].year;
-      if (startMonth > 12) { startYear += 1; startMonth = 1; }
-    }
-
-    const targetCode = targetYear * 100 + targetMonth;
-    const startCode  = startYear  * 100 + startMonth;
-
-    if (startCode > targetCode) {
-      console.log(`全市場月營收已是最新（${targetYear}/${targetMonth}），跳過`);
-      return 0;
-    }
-
-    const gap = monthDiff(startYear, startMonth, targetYear, targetMonth) + 1;
-    console.log(`全市場月營收缺口 ${gap} 個月（${startYear}/${startMonth} ~ ${targetYear}/${targetMonth}），循序補抓...`);
-
     let total = 0;
-    let y = startYear, m = startMonth;
-    for (let i = 0; i < gap; i++) {
-      total += await fetchAndSaveMonthlyRevenue(y, m);
-      m++;
-      if (m > 12) { y++; m = 1; }
+    for (const { stock_id } of stockRows) {
+      total += await fetchRecentMonthlyRevenue(stock_id, backfillMonths);
     }
     return total;
   }
@@ -361,8 +335,33 @@ if (require.main === module) {
     .catch(error => { console.error(error); process.exit(1); });
 }
 
+/**
+ * 給定某股票目前已有資料的最新月份，推算「下一個月」營收的公告截止日
+ * 月營收公告期限：次月10日前
+ * @param {number|null} latestYear
+ * @param {number|null} latestMonth
+ */
+function getNextRevenueDeadline(latestYear, latestMonth) {
+  let year, month;
+  if (!latestYear || !latestMonth) {
+    // 尚無資料：以上個月當基準
+    const now = new Date();
+    year = now.getFullYear();
+    month = now.getMonth(); // 0-based = 上個月
+    if (month === 0) { year -= 1; month = 12; }
+  } else {
+    year = latestYear; month = latestMonth + 1;
+    if (month > 12) { year += 1; month = 1; }
+  }
+
+  let dueYear = year, dueMonth = month + 1;
+  if (dueMonth > 12) { dueYear += 1; dueMonth = 1; }
+  return { year, month, expected_date: `${dueYear}-${String(dueMonth).padStart(2, '0')}-10` };
+}
+
 module.exports = {
   fetchMonthlyRevenue,
   fetchAndSaveMonthlyRevenue,
-  fetchRecentMonthlyRevenue
+  fetchRecentMonthlyRevenue,
+  getNextRevenueDeadline
 };

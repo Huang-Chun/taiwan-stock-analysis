@@ -28,11 +28,15 @@ async function initDatabase() {
     const schemaPath = path.join(__dirname, 'schema.sql');
     const schema = fs.readFileSync(schemaPath, 'utf8');
 
-    // 分割 SQL 語句（以分號分隔）
-    const statements = schema
+    // 分割 SQL 語句（先去除整行註解，避免以註解開頭的敘述被誤判為註解而整段跳過）
+    const noComments = schema
+      .split('\n')
+      .filter(line => !line.trim().startsWith('--'))
+      .join('\n');
+    const statements = noComments
       .split(';')
       .map(s => s.trim())
-      .filter(s => s.length > 0 && !s.startsWith('--'));
+      .filter(s => s.length > 0);
 
     // 執行每個 SQL 語句
     for (const statement of statements) {

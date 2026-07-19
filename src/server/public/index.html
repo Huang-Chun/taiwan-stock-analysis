@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>台股分析系統</title>
+<title>台股供應鏈研究系統</title>
 <style>
 *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
 
@@ -162,18 +162,14 @@ body {
 }
 
 /* Card accent colors */
-.card.chart   .card-icon { background: rgba(56, 189, 248, 0.15); }
-.card.screen  .card-icon { background: rgba(168, 85, 247, 0.15); }
-.card.backtest .card-icon { background: rgba(249, 115, 22, 0.15); }
+.card.industry .card-icon { background: rgba(56, 189, 248, 0.15); }
+.card.dashboard .card-icon { background: rgba(227, 179, 65, 0.15); }
 .card.sectors .card-icon { background: rgba(20, 184, 166, 0.15); }
-.card.ai      .card-icon { background: rgba(234, 179, 8, 0.15); }
 .card.api     .card-icon { background: rgba(156, 163, 175, 0.15); }
 
-.card.chart:hover   { box-shadow: 0 16px 40px rgba(0,0,0,0.4), 0 0 24px rgba(56,189,248,0.08); }
-.card.screen:hover  { box-shadow: 0 16px 40px rgba(0,0,0,0.4), 0 0 24px rgba(168,85,247,0.08); }
-.card.backtest:hover{ box-shadow: 0 16px 40px rgba(0,0,0,0.4), 0 0 24px rgba(249,115,22,0.08); }
+.card.industry:hover { box-shadow: 0 16px 40px rgba(0,0,0,0.4), 0 0 24px rgba(56,189,248,0.08); }
+.card.dashboard:hover { box-shadow: 0 16px 40px rgba(0,0,0,0.4), 0 0 24px rgba(227,179,65,0.08); }
 .card.sectors:hover { box-shadow: 0 16px 40px rgba(0,0,0,0.4), 0 0 24px rgba(20,184,166,0.08); }
-.card.ai:hover      { box-shadow: 0 16px 40px rgba(0,0,0,0.4), 0 0 24px rgba(234,179,8,0.08); }
 .card.api:hover     { box-shadow: 0 16px 40px rgba(0,0,0,0.4), 0 0 24px rgba(156,163,175,0.08); }
 
 /* ── Footer ── */
@@ -207,24 +203,20 @@ body {
       <span class="dot"></span>
       系統運行中
     </div>
-    <h1>台股分析系統</h1>
-    <p class="hero-sub">整合技術面、籌碼面、基本面，搭配 AI 輔助，讓你掌握市場先機。</p>
+    <h1>台股供應鏈研究系統</h1>
+    <p class="hero-sub">以六層供應鏈骨架、護城河分類、三條因果線、客戶關係類型學，系統化研究台股供應鏈基本面。</p>
     <div class="hero-stats">
       <div class="stat">
-        <div class="stat-num">技術面</div>
-        <div class="stat-label">K線 / 指標 / 訊號</div>
+        <div class="stat-num">產業地圖</div>
+        <div class="stat-label">六層供應鏈 / 護城河 / 因果線</div>
       </div>
       <div class="stat">
-        <div class="stat-num">籌碼面</div>
-        <div class="stat-label">法人 / 融資券</div>
+        <div class="stat-num">個股框架</div>
+        <div class="stat-label">客戶關係 / 可證偽假設 / 事件日誌</div>
       </div>
       <div class="stat">
         <div class="stat-num">基本面</div>
         <div class="stat-label">財報 / 月營收 / 估值</div>
-      </div>
-      <div class="stat">
-        <div class="stat-num">AI</div>
-        <div class="stat-label">Claude 輔助分析</div>
       </div>
     </div>
   </section>
@@ -233,24 +225,17 @@ body {
   <p class="grid-title">選擇功能</p>
   <div class="features">
 
-    <a href="/chart.html" class="card chart">
-      <div class="card-icon">📈</div>
-      <div class="card-title">K 線圖分析</div>
-      <div class="card-desc">技術指標、K線型態、AI 即時分析、法人與融資券動向。</div>
+    <a href="/industry.html" class="card industry">
+      <div class="card-icon">🗺</div>
+      <div class="card-title">產業地圖</div>
+      <div class="card-desc">六層供應鏈骨架、護城河分類、三條因果線、主題中性矩陣、可證偽假設。</div>
       <span class="card-arrow">→</span>
     </a>
 
-    <a href="/screen.html" class="card screen">
-      <div class="card-icon">🔍</div>
-      <div class="card-title">策略篩選</div>
-      <div class="card-desc">黃金交叉、RSI 超賣、MACD 訊號等多種策略一鍵篩股。</div>
-      <span class="card-arrow">→</span>
-    </a>
-
-    <a href="/backtest.html" class="card backtest">
-      <div class="card-icon">⏱</div>
-      <div class="card-title">策略回測</div>
-      <div class="card-desc">歷史數據驗證策略績效，勝率、最大回撤、年化報酬一目瞭然。</div>
+    <a href="/dashboard.html" class="card dashboard">
+      <div class="card-icon">🔔</div>
+      <div class="card-title">觀察總覽</div>
+      <div class="card-desc">每日自動同步數字、標出待覆盤的變化，敘事判斷仍由人工更新。</div>
       <span class="card-arrow">→</span>
     </a>
 
@@ -261,23 +246,16 @@ body {
       <span class="card-arrow">→</span>
     </a>
 
-    <a href="/chart.html#chat" class="card ai">
-      <div class="card-icon">🤖</div>
-      <div class="card-title">AI 聊天分析</div>
-      <div class="card-desc">與 Claude 多輪對話，深度剖析個股、盤勢與投資策略。</div>
-      <span class="card-arrow">→</span>
-    </a>
-
     <a href="/api.html" class="card api">
       <div class="card-icon">📄</div>
       <div class="card-title">API 文件</div>
-      <div class="card-desc">REST API 完整參考，技術面、籌碼面、基本面端點一覽。</div>
+      <div class="card-desc">REST API 完整參考，產業地圖、個股框架、基本面端點一覽。</div>
       <span class="card-arrow">→</span>
     </a>
 
   </div>
 
-  <div class="footer">Taiwan Stock Analysis System &nbsp;·&nbsp; Powered by Claude</div>
+  <div class="footer">Taiwan Stock Supply-Chain Research System &nbsp;·&nbsp; Powered by Claude</div>
 
 </div>
 
