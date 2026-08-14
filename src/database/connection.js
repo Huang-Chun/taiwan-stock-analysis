@@ -12,7 +12,9 @@ const pool = mysql.createPool({
   connectionLimit: 10,
   queueLimit: 0,
   charset: 'utf8mb4',
-  dateStrings: true
+  dateStrings: true,
+  // TiDB Cloud Serverless 需要 SSL；本機 MySQL 設 false
+  ssl: process.env.DB_SSL === 'true' ? { minVersion: 'TLSv1.2', rejectUnauthorized: true } : false,
 });
 
 // 測試連接
