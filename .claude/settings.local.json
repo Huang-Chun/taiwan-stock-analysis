@@ -77,7 +77,12 @@
       "Bash(find C:/Users/User/AppData/Local/Temp/claude/C--Users-User-Desktop-Claude-stock-analysis-taiwan-stock-analysis-taiwan-stock-analysis/1ad87167-5cab-4a61-8cff-3f581bd52aa5/scratchpad/framework/taiwan-supply-chain-framework -type f)",
       "mcp__claude_ai_Notion__notion-search",
       "mcp__claude_ai_Notion__notion-fetch",
-      "Bash(tasklist //FI \"IMAGENAME eq node.exe\")"
+      "Bash(tasklist //FI \"IMAGENAME eq node.exe\")",
+      "Bash(git commit *)",
+      "Bash(git push *)",
+      "Bash(git fetch *)",
+      "Bash(git pull *)",
+      "Bash(git add *)"
     ]
   },
   "enableAllProjectMcpServers": true,
