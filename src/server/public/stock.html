@@ -1,0 +1,802 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>個股框架 - 台股供應鏈研究系統</title>
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<style>
+:root {
+  --bg: #0d1117; --bg2: #161b22; --bg3: #21262d;
+  --border: #30363d; --text: #e6edf3; --muted: #8b949e;
+  --green: #3fb950; --red: #f85149; --yellow: #e3b341;
+  --blue: #58a6ff; --purple: #bc8cff; --radius: 8px;
+}
+*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Microsoft JhengHei', sans-serif; font-size: 14px; }
+
+.topbar { display:flex; align-items:center; gap:16px; padding:10px 20px; background:var(--bg2); border-bottom:1px solid var(--border); position:sticky; top:0; z-index:100; }
+.topbar a { color:var(--blue); text-decoration:none; font-size:13px; font-weight:600; }
+.topbar .title { font-weight:700; font-size:15px; }
+.topbar nav { margin-left:auto; display:flex; gap:14px; }
+.topbar nav a { color:var(--muted); font-weight:400; }
+.topbar nav a:hover { color:var(--text); }
+
+.main { max-width:1180px; margin:0 auto; padding:24px 32px 80px; }
+.empty { color:var(--muted); padding:40px; text-align:center; }
+
+.im-header { display:flex; align-items:center; gap:10px; margin-bottom:6px; }
+.im-header h1 { font-size:22px; font-weight:700; }
+.im-header .stock-tag { font-family:monospace; font-size:14px; color:var(--muted); }
+.im-header .spacer { flex:1; }
+.industry-link { font-size:12px; color:var(--muted); margin-bottom:22px; }
+.industry-link a { color:var(--blue); text-decoration:none; }
+
+.tab-nav { display:flex; gap:4px; border-bottom:1px solid var(--border); margin-bottom:20px; }
+.tab-btn { background:none; border:none; border-bottom:2px solid transparent; color:var(--muted); padding:9px 4px; margin-right:20px; font-size:13.5px; font-weight:600; cursor:pointer; }
+.tab-btn:hover { color:var(--text); }
+.tab-btn.active { color:var(--blue); border-bottom-color:var(--blue); }
+.btn-toggle { background:var(--bg3); border:1px solid var(--border); color:var(--text); border-radius:6px; padding:6px 12px; font-size:12px; cursor:pointer; white-space:nowrap; }
+.btn-toggle:hover { border-color:var(--blue); }
+
+.card { background:var(--bg2); border:1px solid var(--border); border-radius:var(--radius); padding:18px 20px; margin-bottom:20px; }
+.card-title { font-size:13px; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:.06em; margin-bottom:12px; display:flex; align-items:center; gap:10px; }
+.card-title .hint { font-weight:400; text-transform:none; letter-spacing:0; color:#5a6a7a; font-size:11px; }
+
+textarea, input[type=text], select { width:100%; background:var(--bg3); border:1px solid var(--border); border-radius:6px; color:var(--text); padding:8px 10px; font-size:13px; font-family:inherit; resize:vertical; }
+textarea:focus, input[type=text]:focus, select:focus { outline:none; border-color:var(--blue); }
+
+.btn-save { background:var(--blue); border:none; color:#fff; border-radius:6px; padding:6px 14px; font-size:12px; cursor:pointer; margin-top:10px; }
+.btn-save:hover { opacity:.9; }
+.btn-save.small { padding:4px 10px; margin-top:6px; }
+.save-ok { color:var(--green); font-size:12px; margin-left:8px; }
+
+.field-value { line-height:1.8; color:var(--text); font-size:14px; }
+.field-value.empty { color:#4a5a6a; font-style:italic; white-space:pre-wrap; }
+.field-value h1, .field-value h2, .field-value h3 { font-weight:700; }
+.field-value h1 { font-size:17px; color:var(--blue); border-bottom:2px solid var(--blue); padding-bottom:5px; margin:14px 0 8px; }
+.field-value h2 { font-size:14.5px; color:var(--yellow); border-left:3px solid var(--yellow); padding-left:9px; margin:14px 0 8px; }
+.field-value h3 { font-size:13px; color:var(--purple); margin:12px 0 6px; }
+.field-value h1:first-child, .field-value h2:first-child, .field-value h3:first-child { margin-top:2px; }
+.field-value p { margin-bottom:10px; }
+.field-value ul, .field-value ol { padding-left:20px; margin-bottom:10px; }
+.field-value li { margin-bottom:5px; line-height:1.7; }
+.field-value strong { color:var(--yellow); font-weight:700; }
+.field-value em { color:var(--muted); font-style:normal; }
+.field-value code { background:var(--bg3); padding:1px 6px; border-radius:4px; font-size:12px; font-family:Consolas,'Courier New',monospace; color:#e06c75; }
+.field-value hr { border:none; border-top:1px solid var(--border); margin:12px 0; }
+.field-value table { width:100%; border-collapse:collapse; margin:8px 0 12px; }
+.field-value th, .field-value td { text-align:left; padding:6px 9px; border:1px solid var(--border); font-size:12.5px; line-height:1.5; }
+.field-value th { background:var(--bg2); color:var(--muted); font-weight:700; white-space:nowrap; }
+.field-value-scroll { overflow-x:auto; }
+
+.table-scroll { overflow-x:auto; }
+table.rtable { width:100%; border-collapse:collapse; }
+table.rtable th { text-align:left; font-size:11px; color:var(--muted); padding:6px 8px; border-bottom:1px solid var(--border); white-space:nowrap; }
+table.rtable td { padding:8px; border-bottom:1px solid var(--border); vertical-align:top; line-height:1.6; }
+table.rtable input { font-size:12px; padding:5px 7px; }
+
+.cd-row { display:grid; grid-template-columns:160px 1fr; gap:10px; margin-bottom:10px; align-items:start; }
+.cd-row .cd-label { font-size:11px; color:var(--muted); padding-top:6px; }
+.cd-section-title { font-size:11px; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:.06em; margin:16px 0 8px; padding-top:12px; border-top:1px solid var(--border); }
+table.rtable td.pos { color:var(--green); }
+table.rtable td.neg { color:var(--red); }
+table.rtable td.health-healthy { color:var(--green); }
+table.rtable td.health-unhealthy { color:var(--red); }
+table.rtable td.health-neutral { color:var(--muted); }
+
+.causal-line { margin-bottom:16px; padding-bottom:16px; border-bottom:1px solid var(--border); }
+.causal-line:last-child { border-bottom:none; margin-bottom:0; padding-bottom:0; }
+.causal-line .label { font-size:12px; font-weight:700; color:var(--yellow); margin-bottom:6px; }
+.causal-line textarea { margin-bottom:6px; min-height:50px; }
+.causal-line textarea.evidence { min-height:36px; }
+.causal-line .evidence-text { color:var(--muted); font-size:12.5px; margin-top:4px; }
+
+.btn-row-remove { background:none; border:none; color:var(--red); cursor:pointer; font-size:14px; }
+.btn-add-row { background:none; border:1px dashed var(--border); color:var(--muted); border-radius:6px; padding:5px 10px; font-size:12px; cursor:pointer; margin-right:8px; }
+.btn-add-row:hover { border-color:var(--blue); color:var(--blue); }
+
+.hyp-card { background:var(--bg3); border:1px solid var(--border); border-radius:6px; padding:12px; margin-bottom:10px; }
+.hyp-card textarea { margin-bottom:6px; }
+.hyp-card .row { display:flex; justify-content:space-between; align-items:center; margin-top:6px; }
+.btn-del-hyp { background:none; border:none; color:var(--red); cursor:pointer; font-size:12px; }
+.status-badge { display:inline-block; padding:2px 9px; border-radius:10px; font-size:11px; background:var(--bg3); border:1px solid var(--border); color:var(--muted); }
+
+.check-item { display:flex; align-items:center; gap:8px; padding:4px 0; font-size:13px; }
+.check-item.checked { color:var(--green); }
+.check-item input[type=checkbox] { width:auto; }
+.event-item { padding:8px 0; border-bottom:1px solid var(--border); font-size:12.5px; }
+.event-item:last-child { border-bottom:none; }
+.event-date { color:var(--blue); font-weight:600; margin-right:8px; }
+
+.chart-block { margin:10px 0 20px; }
+.chart-block svg { width:100%; height:auto; display:block; overflow:visible; }
+.chart-mark { cursor:pointer; }
+.chart-mark:hover, .chart-mark:focus { filter:brightness(1.35); outline:none; }
+.chart-axis-label { fill:var(--muted); font-size:9.5px; }
+.chart-value-label { fill:var(--muted); font-size:10px; font-weight:600; }
+.chart-tip { position:fixed; background:var(--bg3); border:1px solid var(--border); border-radius:6px; padding:6px 10px; font-size:12px; pointer-events:none; z-index:1000; display:none; box-shadow:0 4px 14px rgba(0,0,0,.45); white-space:nowrap; }
+.chart-tip .tip-label { color:var(--muted); font-size:11px; }
+.chart-tip .tip-value { color:var(--text); font-weight:700; }
+
+/* 說明性文字收在小標籤裡，滑鼠移上去/Tab focus 才展開，平常畫面只留數字/圖表 */
+.info-pills { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:14px; }
+.info-pill { position:relative; display:inline-flex; align-items:center; gap:5px; padding:4px 11px; border-radius:12px; background:var(--bg3); border:1px solid var(--border); color:var(--muted); font-size:11.5px; font-weight:600; cursor:default; }
+.info-pill .ico { display:inline-flex; align-items:center; justify-content:center; width:14px; height:14px; border-radius:50%; background:var(--border); color:var(--bg2); font-size:10px; font-weight:700; }
+.info-pill:hover, .info-pill:focus { border-color:var(--blue); color:var(--blue); outline:none; }
+.info-pill:hover .ico, .info-pill:focus .ico { background:var(--blue); }
+.info-pill .notes-popover { display:none; position:absolute; top:28px; left:0; width:480px; max-width:min(480px,85vw); background:var(--bg3); border:1px solid var(--border); border-radius:8px; padding:14px 16px; box-shadow:0 8px 24px rgba(0,0,0,.5); z-index:50; text-align:left; cursor:auto; }
+.info-pill:hover .notes-popover, .info-pill:focus .notes-popover, .info-pill .notes-popover:hover { display:block; }
+.notes-popover .field-value { font-size:12.5px; line-height:1.6; }
+.notes-popover .field-value table { font-size:11.5px; }
+
+.provisional-badge { display:flex; align-items:center; gap:8px; background:var(--bg3); border:1px solid var(--border); border-radius:6px; padding:8px 12px; margin-bottom:10px; font-size:12.5px; }
+.provisional-badge .tag { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); background:var(--bg2); border-radius:4px; padding:2px 6px; white-space:nowrap; }
+.provisional-badge .label { font-weight:600; }
+.provisional-badge .label.pos { color:var(--green); }
+.provisional-badge .label.neg { color:var(--red); }
+.provisional-badge .caveat { color:var(--muted); font-size:11px; margin-left:auto; }
+
+/* 表格欄位標題的算法說明，滑鼠移上去/Tab focus 才顯示，平常只看到欄位名稱 */
+table.rtable th.th-info { position:relative; cursor:default; text-decoration:underline dotted var(--muted) 1px; text-underline-offset:3px; }
+table.rtable th.th-info:hover, table.rtable th.th-info:focus { color:var(--blue); text-decoration-color:var(--blue); outline:none; }
+table.rtable th.th-info .th-tip { display:none; position:absolute; top:22px; left:0; width:220px; max-width:70vw; background:var(--bg3); border:1px solid var(--border); border-radius:6px; padding:8px 10px; font-size:11px; font-weight:400; text-transform:none; letter-spacing:normal; color:var(--text); line-height:1.5; box-shadow:0 6px 18px rgba(0,0,0,.5); z-index:60; white-space:normal; }
+table.rtable th.th-info:hover .th-tip, table.rtable th.th-info:focus .th-tip { display:block; }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <a href="/">← 台股供應鏈研究系統</a>
+  <span class="title">個股框架</span>
+  <nav>
+    <a href="/dashboard.html">觀察總覽</a>
+    <a href="/industry.html">產業地圖</a>
+    <a href="/sectors.html">產業分類</a>
+    <a href="/api.html">API</a>
+  </nav>
+</div>
+
+<div class="main" id="main">
+  <div class="empty">載入中...</div>
+</div>
+
+<script>
+const LAYERS = ['設備','原材料','關鍵材料','零組件製造','模組整合','終端產品'];
+const CAUSAL_TYPES = [
+  { key: 'supply', label: '① 供給側結構性變化' },
+  { key: 'demand', label: '② 需求側缺口浮現' },
+  { key: 'inventory', label: '③ 庫存週期位置' },
+];
+const MOAT_SOURCE = ['地理稀缺性','製程精度+BOM鎖定','製程know-how稀缺性'];
+const RELATIONSHIP = ['規格驗證型','架構共同開發型'];
+const SUPPLIER = ['多供應商','單一綁定'];
+
+const stockId = new URLSearchParams(location.search).get('id');
+let detail = null;
+let monthlyRevenue = null;
+let costData = null;
+let viewMode = true;
+let activeTab = 'quant'; // 'quant' = 基本面量化指標, 'research' = 研究判斷
+
+function esc(s) { return (s ?? '').toString().replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function fieldValue(text) {
+  const t = (text ?? '').toString().trim();
+  return t ? `<div class="field-value">${marked.parse(t)}</div>` : `<div class="field-value empty">尚未填寫</div>`;
+}
+function flash(btn) {
+  const ok = document.createElement('span');
+  ok.className = 'save-ok';
+  ok.textContent = '✓ 已儲存';
+  btn.after(ok);
+  setTimeout(() => ok.remove(), 1500);
+}
+function enumOptions(values, selected) {
+  return '<option value="">—</option>' + values.map(v => `<option value="${v}" ${v===selected?'selected':''}>${v}</option>`).join('');
+}
+
+async function load() {
+  if (!stockId) {
+    document.getElementById('main').innerHTML = '<div class="empty">網址缺少股票代號，例如 stock.html?id=2481</div>';
+    return;
+  }
+  const r = await fetch(`/api/stocks/${stockId}/profile`);
+  const j = await r.json();
+  if (!j.success) {
+    document.getElementById('main').innerHTML = `<div class="empty">${esc(j.error || '尚未建立框架分類')}<br><br><a href="/industry.html" style="color:var(--blue)">回產業地圖</a></div>`;
+    return;
+  }
+  detail = j.data;
+  detail.verification_items = detail.verification_items || [];
+  detail.matrix_cells = detail.matrix_cells || [];
+
+  const [revRes, costRes] = await Promise.all([
+    fetch(`/api/stocks/${stockId}/revenue?months=12`).then(x => x.json()).catch(() => null),
+    fetch(`/api/stocks/${stockId}/cost-structure?quarters=8`).then(x => x.json()).catch(() => null),
+  ]);
+  monthlyRevenue = revRes?.success ? revRes.data : null;
+  costData = costRes?.success ? costRes.data : null;
+
+  render();
+}
+
+function toggleViewMode() { viewMode = !viewMode; render(); }
+
+/* ─── 稼動率觀察：月營收(月頻率) + COGS/毛利率結構(季頻率，毛利只有季揭露) ─── */
+// mysql2 回傳 DECIMAL 欄位是字串（例如 "32.78"），這幾個格式化函式的輸入不保證是 number，一律先轉型
+function fmtE(v) { if (v == null) return '—'; const n = Number(v); return (n / 1e8).toFixed(2) + ' 億'; }
+function fmtPct(v) { if (v == null) return '—'; const n = Number(v); return (n >= 0 ? '+' : '') + n.toFixed(2) + '%'; }
+function pctClass(v) { if (v == null) return ''; return Number(v) >= 0 ? 'pos' : 'neg'; }
+const HEALTH_LABEL = { healthy: '健康', neutral: '中性', unhealthy: '不健康' };
+
+/* ─── 小型 SVG 圖表：單軸、單一序列，不用套件。點/長條可以 hover 看數值 ─── */
+let chartMarkSeq = 0;
+const chartMarkData = {}; // id -> {label, value, unit}
+
+function registerMark(label, value, unit) {
+  const id = 'cm' + (chartMarkSeq++);
+  chartMarkData[id] = { label, value, unit };
+  return id;
+}
+
+// points: [{label, value}]
+function renderLineChart(points, opts) {
+  const { unit = '', color = 'var(--blue)' } = opts;
+  const W = 640, H = 130, padL = 6, padR = 30, padT = 20, padB = 20;
+  const plotW = W - padL - padR, plotH = H - padT - padB;
+  const vals = points.map(p => p.value).filter(v => v != null);
+  if (!vals.length) return fieldValue(null);
+  let maxV = Math.max(...vals), minV = Math.min(...vals);
+  if (maxV === minV) { maxV += 1; minV -= 1; }
+  const pad = (maxV - minV) * 0.15;
+  maxV += pad; minV -= pad;
+  const range = maxV - minV;
+  const n = points.length;
+  const scaleX = i => padL + (n === 1 ? plotW / 2 : plotW * i / (n - 1));
+  const scaleY = v => padT + plotH * (maxV - v) / range;
+
+  const coords = points.map((p, i) => ({ ...p, x: scaleX(i), y: p.value == null ? null : scaleY(p.value) }));
+  const linePts = coords.filter(c => c.y != null).map(c => `${c.x},${c.y}`).join(' ');
+
+  let marks = '', labels = '';
+  coords.forEach((c, i) => {
+    labels += `<text class="chart-axis-label" x="${c.x}" y="${H - 4}" text-anchor="middle">${esc(c.label)}</text>`;
+    if (c.y == null) return;
+    const id = registerMark(c.label, c.value, unit);
+    marks += `<circle class="chart-mark" tabindex="0" data-mark="${id}" cx="${c.x}" cy="${c.y}" r="5" fill="${color}" stroke="var(--bg2)" stroke-width="2"></circle>`;
+    if (i === n - 1) {
+      marks += `<text class="chart-value-label" x="${c.x + 8}" y="${c.y + 4}" text-anchor="start">${fmtChartVal(c.value, unit)}</text>`;
+    }
+  });
+
+  return `<div class="chart-block"><svg viewBox="0 0 ${W} ${H}">
+    <polyline points="${linePts}" fill="none" stroke="${color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"></polyline>
+    ${marks}${labels}
+  </svg></div>`;
+}
+
+function fmtChartVal(v, unit) {
+  if (unit === '億') return (v / 1e8).toFixed(1) + '億';
+  if (unit === '%') return (v >= 0 ? '+' : '') + v.toFixed(1) + '%';
+  if (unit === 'x') return v.toFixed(2) + 'x';
+  return String(v);
+}
+
+function initChartInteractivity() {
+  let tip = document.getElementById('chartTip');
+  if (!tip) {
+    tip = document.createElement('div');
+    tip.id = 'chartTip';
+    tip.className = 'chart-tip';
+    const label = document.createElement('div');
+    label.className = 'tip-label';
+    const value = document.createElement('div');
+    value.className = 'tip-value';
+    tip.append(label, value);
+    document.body.appendChild(tip);
+  }
+  const [tipLabel, tipValue] = tip.children;
+
+  const show = (mark, x, y) => {
+    const d = chartMarkData[mark.dataset.mark];
+    if (!d) return;
+    tipLabel.textContent = d.label;
+    tipValue.textContent = fmtChartVal(d.value, d.unit);
+    tip.style.display = 'block';
+    tip.style.left = (x + 14) + 'px';
+    tip.style.top = (y - 14) + 'px';
+  };
+  const hide = () => { tip.style.display = 'none'; };
+
+  document.querySelectorAll('.chart-mark').forEach(m => {
+    m.addEventListener('mousemove', e => show(m, e.clientX, e.clientY));
+    m.addEventListener('mouseleave', hide);
+    m.addEventListener('focus', () => {
+      const r = m.getBoundingClientRect();
+      show(m, r.left + r.width / 2, r.top);
+    });
+    m.addEventListener('blur', hide);
+  });
+}
+
+// 表格欄位標題：滑鼠移上去顯示這一欄怎麼算出來的
+function thTip(label, formula) {
+  return `<th class="th-info" tabindex="0">${esc(label)}<div class="th-tip">${esc(formula)}</div></th>`;
+}
+
+function revenueTable() {
+  if (!monthlyRevenue || !monthlyRevenue.history?.length) return fieldValue(null);
+  const rows = [...monthlyRevenue.history].reverse(); // 最新月份在最上面
+  return `<div class="table-scroll"><table class="rtable">
+    <tr><th>月份</th><th>營收</th>
+      ${thTip('月增率', '(本月營收－上月營收) ÷ 上月營收 × 100%')}
+      ${thTip('年增率', '(本月營收－去年同月營收) ÷ 去年同月營收 × 100%')}
+      ${thTip('累積年增率', '(今年累積營收－去年同期累積營收) ÷ 去年同期累積營收 × 100%')}
+    </tr>
+    ${rows.map(r => `<tr>
+      <td>${r.year}/${String(r.month).padStart(2,'0')}</td>
+      <td>${fmtE(r.revenue)}</td>
+      <td class="${pctClass(r.revenue_mom)}">${fmtPct(r.revenue_mom)}</td>
+      <td class="${pctClass(r.revenue_yoy)}">${fmtPct(r.revenue_yoy)}</td>
+      <td class="${pctClass(r.cumulative_yoy)}">${fmtPct(r.cumulative_yoy)}</td>
+    </tr>`).join('')}
+  </table></div>`;
+}
+
+function costTable() {
+  if (!costData || !costData.length) return fieldValue(null);
+  const rows = [...costData].reverse(); // 最新季在最上面
+  return `<div class="table-scroll"><table class="rtable">
+    <tr><th>季度</th><th>營收</th>
+      ${thTip('毛利率', '毛利 ÷ 營收 × 100%')}
+      ${thTip('營收季增率', '(本季營收－上季營收) ÷ 上季營收 × 100%')}
+      ${thTip('營業成本季增率', '(本季營業成本－上季營業成本) ÷ 上季營業成本 × 100%。營業成本只受出貨量影響、不受售價影響')}
+      ${thTip('毛利率變動', '本季毛利率－上季毛利率(百分點差，不是成長率)')}
+      ${thTip('自動判讀', '依「營收季增率」與「毛利率變動」的方向組合，查9宮格分類表判讀（見上方判斷邏輯）')}
+    </tr>
+    ${rows.map(r => `<tr>
+      <td>${r.year}Q${r.quarter}</td>
+      <td>${fmtE(r.revenue)}</td>
+      <td>${r.gross_margin == null ? '—' : Number(r.gross_margin).toFixed(2) + '%'}</td>
+      <td class="${pctClass(r.revenue_qoq)}">${fmtPct(r.revenue_qoq)}</td>
+      <td class="${pctClass(r.operating_cost_qoq)}">${fmtPct(r.operating_cost_qoq)}</td>
+      <td class="${pctClass(r.margin_change)}">${r.margin_change == null ? '—' : (r.margin_change >= 0 ? '+' : '') + r.margin_change.toFixed(2) + 'pt'}</td>
+      <td class="health-${r.health || ''}">${r.trend_label ? `${HEALTH_LABEL[r.health]}：${esc(r.trend_label)}` : '—'}</td>
+    </tr>`).join('')}
+  </table></div>
+  <div style="color:var(--muted);font-size:11.5px;margin-top:8px;">健康判準只有一條紅線：毛利率有沒有惡化。營收方向(報價/量增/成本)只負責解釋「為什麼」，不影響健不健康的判定——毛利率變動小於 0.5pt、營收季增率小於 1.5pt 視為持平。</div>`;
+}
+
+function revenueChart() {
+  if (!monthlyRevenue?.history?.length) return fieldValue(null);
+  const points = monthlyRevenue.history.map(r => ({ label: `${r.month}月`, value: Number(r.revenue) }));
+  return renderLineChart(points, { unit: '億', color: 'var(--blue)' });
+}
+function marginChart() {
+  if (!costData?.length) return fieldValue(null);
+  const points = costData.map(r => ({ label: `${r.year}Q${r.quarter}`, value: r.gross_margin }));
+  return renderLineChart(points, { unit: '%', color: 'var(--blue)' });
+}
+
+// COGS 是季頻率、比月營收慢一整季確認——這裡先用近3個月月營收MoM的持續性做一個「早期觀察」，
+// 只能看出「有沒有東西在發生」，不能分辨報價還是量增(那一定要等COGS)，所以標籤上要清楚寫「未經COGS驗證」
+function monthlyProvisionalRead() {
+  const h = monthlyRevenue?.history;
+  if (!h || h.length < 2) return null;
+  const recent = h.slice(-3).filter(r => r.revenue_mom != null).map(r => Number(r.revenue_mom));
+  if (recent.length < 2) return null;
+
+  const allPos = recent.every(v => v > 0);
+  const allNeg = recent.every(v => v < 0);
+  const rising = recent.every((v, i) => i === 0 || v >= recent[i - 1]);
+  const falling = recent.every((v, i) => i === 0 || v <= recent[i - 1]);
+
+  let label, tone;
+  if (allPos && rising) { label = '連續正成長，且幅度在擴大'; tone = 'pos'; }
+  else if (allPos) { label = '連續正成長，但幅度不穩定'; tone = 'pos'; }
+  else if (allNeg && falling) { label = '連續衰退，且幅度在惡化'; tone = 'neg'; }
+  else if (allNeg) { label = '連續衰退'; tone = 'neg'; }
+  else { label = '方向不一致，尚無明確趨勢'; tone = ''; }
+
+  const months = h.slice(-3).map(r => `${r.month}月`).join('、');
+  return { label, tone, months };
+}
+function provisionalBadge() {
+  const p = monthlyProvisionalRead();
+  if (!p) return '';
+  return `<div class="provisional-badge">
+    <span class="tag">早期觀察</span>
+    <span class="label ${p.tone}">近3個月(${esc(p.months)})月營收MoM：${esc(p.label)}</span>
+    <span class="caveat">未經營業成本驗證，只代表有動靜、還不能判斷是報價還是量增</span>
+  </div>`;
+}
+
+// metric_notes 用 "## 標題" 切成好幾段：第一個標題之前的文字當簡短導言直接顯示，
+// 之後每個 "## 標題" 各自變成一個小標籤，滑鼠移上去/Tab focus 才展開內容——
+// 頁面平常只看得到數字/圖表，說明性文字全部收起來，不用捲一大坨字才找得到重點
+function parseMetricSections(text) {
+  const t = (text ?? '').toString().trim();
+  if (!t) return { intro: '', sections: [] };
+  const chunks = t.split(/\n(?=## )/);
+  const intro = /^##\s/.test(chunks[0]) ? '' : chunks.shift().trim();
+  const sections = chunks.map(c => {
+    const m = c.match(/^##\s+(.+)/);
+    return { title: m ? m[1].trim() : '說明', body: c.trim() };
+  });
+  return { intro, sections };
+}
+function metricNotesRead(text) {
+  const { intro, sections } = parseMetricSections(text);
+  if (!intro && !sections.length) return fieldValue(null);
+  const pills = sections.map(s => `
+    <div class="info-pill" tabindex="0">
+      <span class="ico">i</span>${esc(s.title)}
+      <div class="notes-popover">${fieldValue(s.body)}</div>
+    </div>`).join('');
+  return `${intro ? fieldValue(intro) : ''}${pills ? `<div class="info-pills">${pills}</div>` : ''}`;
+}
+
+async function saveMetricNotes(btn) {
+  const metric_notes = document.getElementById('f_metric_notes').value;
+  await fetch(`/api/stocks/${stockId}/profile`, {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ metric_notes, industry_map_id: detail.industry_map_id, is_coverage_active: true })
+  });
+  detail.metric_notes = metric_notes;
+  flash(btn);
+}
+
+function costCard() {
+  return `
+    <div class="card">
+      <div class="card-title">稼動率觀察 <span class="hint">月營收是月頻率，營業成本/毛利率只能季頻率(毛利只有季報揭露)</span></div>
+
+      ${viewMode ? metricNotesRead(detail.metric_notes) : ''}
+
+      ${provisionalBadge()}
+
+      <div class="cd-section-title" style="margin-top:0;padding-top:0;border-top:none;">月營收（近12個月）</div>
+      ${revenueChart()}
+      ${revenueTable()}
+
+      <div class="cd-section-title">營業成本 / 毛利率結構（近${costData?.length || 0}季）</div>
+      ${marginChart()}
+      ${costTable()}
+
+      <div class="cd-section-title">可證偽假設 <span class="hint">跟這個指標直接相關的假設放在這裡，方便對照數字</span></div>
+      ${viewMode ? hypothesesRead(costHypotheses()) : hypothesesEdit(costHypotheses())}
+      ${viewMode ? '' : '<button class="btn-add-row" onclick="addHypothesis(\'cost_structure\')">+ 新增假設</button>'}
+
+      ${viewMode ? '' : `
+      <div class="cd-section-title">指標判讀方法 <span class="hint">用「## 標題」分段，每段變成上面一個可以hover展開的小標籤；標題之前的文字當簡短導言直接顯示</span></div>
+      <textarea id="f_metric_notes" rows="10">${esc(detail.metric_notes)}</textarea>
+      <button class="btn-save small" onclick="saveMetricNotes(this)">儲存</button>`}
+    </div>`;
+}
+
+/* ─── 護城河 / 客戶關係 / v1 判斷 ─── */
+async function saveProfile(btn) {
+  const g = (id) => document.getElementById(id);
+  const body = {
+    layer: g('cf_layer').value || null,
+    moat_source: g('cf_moat_source').value || null,
+    moat_level: g('cf_moat_level').value,
+    key_structure_status: g('cf_key_structure_status').value,
+    relationship_type: g('cf_relationship_type').value || null,
+    supplier_multiplicity: g('cf_supplier_multiplicity').value || null,
+    integration_risk_notes: g('cf_integration_risk_notes').value,
+    v1_judgment: g('cf_v1_judgment').value,
+    v1_reasoning: g('cf_v1_reasoning').value,
+    business_notes: g('cf_business_notes').value,
+    open_gaps: g('cf_open_gaps').value,
+    industry_map_id: detail.industry_map_id,
+    is_coverage_active: true,
+  };
+  await fetch(`/api/stocks/${stockId}/profile`, {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  });
+  Object.assign(detail, body);
+  flash(btn);
+}
+
+function profileEdit(d) {
+  return `
+    <div class="cd-row"><div class="cd-label">供應鏈層別</div><select id="cf_layer">${enumOptions(LAYERS, d.layer)}</select></div>
+    <div class="cd-row"><div class="cd-label">稀缺性來源</div><select id="cf_moat_source">${enumOptions(MOAT_SOURCE, d.moat_source)}</select></div>
+    <div class="cd-row"><div class="cd-label">護城河等級</div><input type="text" id="cf_moat_level" value="${esc(d.moat_level)}"></div>
+    <div class="cd-row"><div class="cd-label">關鍵結構現況</div><textarea id="cf_key_structure_status" rows="2">${esc(d.key_structure_status)}</textarea></div>
+    <div class="cd-row"><div class="cd-label">客戶關係型態</div><select id="cf_relationship_type">${enumOptions(RELATIONSHIP, d.relationship_type)}</select></div>
+    <div class="cd-row"><div class="cd-label">多供應商/單一綁定</div><select id="cf_supplier_multiplicity">${enumOptions(SUPPLIER, d.supplier_multiplicity)}</select></div>
+    <div class="cd-row"><div class="cd-label">3-5年整合/替代風險</div><textarea id="cf_integration_risk_notes" rows="2">${esc(d.integration_risk_notes)}</textarea></div>
+    <div class="cd-row"><div class="cd-label">v1 投資判斷</div><input type="text" id="cf_v1_judgment" value="${esc(d.v1_judgment)}" placeholder="例如 Fully priced, watchlist not buy"></div>
+    <div class="cd-row"><div class="cd-label">判斷理由</div><textarea id="cf_v1_reasoning" rows="2">${esc(d.v1_reasoning)}</textarea></div>
+    <div class="cd-row"><div class="cd-label">商業模式補充</div><textarea id="cf_business_notes" rows="3">${esc(d.business_notes)}</textarea></div>
+    <div class="cd-row"><div class="cd-label">待確認事項</div><textarea id="cf_open_gaps" rows="2">${esc(d.open_gaps)}</textarea></div>
+    <button class="btn-save small" onclick="saveProfile(this)">儲存</button>`;
+}
+function profileRead(d) {
+  const rows = [
+    ['供應鏈層別', d.layer], ['稀缺性來源', d.moat_source], ['護城河等級', d.moat_level],
+    ['關鍵結構現況', d.key_structure_status], ['客戶關係型態', d.relationship_type],
+    ['多供應商/單一綁定', d.supplier_multiplicity], ['3-5年整合/替代風險', d.integration_risk_notes],
+    ['v1 投資判斷', d.v1_judgment], ['判斷理由', d.v1_reasoning], ['商業模式補充', d.business_notes],
+    ['待確認事項', d.open_gaps],
+  ];
+  return rows.map(([label, val]) => `<div class="cd-row"><div class="cd-label">${label}</div>${fieldValue(val)}</div>`).join('');
+}
+
+/* ─── 產品線 × 應用（就是產業頁面「產品×應用總覽」的資料來源，這裡是唯一能編輯的地方） ─── */
+async function addMatrixCell() {
+  const r = await fetch(`/api/stocks/${stockId}/matrix-cells`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ product_line: '', application: '', note: '' })
+  });
+  const j = await r.json();
+  detail.matrix_cells.push({ id: j.id, product_line: '', application: '', note: '' });
+  render();
+}
+async function saveMatrixCell(cellId, btn) {
+  const product_line = document.getElementById(`mcp_${cellId}`).value;
+  const application = document.getElementById(`mca_${cellId}`).value;
+  const note = document.getElementById(`mcn_${cellId}`).value;
+  await fetch(`/api/stocks/${stockId}/matrix-cells/${cellId}`, {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ product_line, application, note })
+  });
+  const c = detail.matrix_cells.find(x => x.id === cellId);
+  if (c) Object.assign(c, { product_line, application, note });
+  flash(btn);
+}
+async function deleteMatrixCell(cellId) {
+  if (!confirm('刪除這一列產品線？')) return;
+  await fetch(`/api/stocks/${stockId}/matrix-cells/${cellId}`, { method: 'DELETE' });
+  detail.matrix_cells = detail.matrix_cells.filter(c => c.id !== cellId);
+  render();
+}
+function matrixEdit(d) {
+  return `
+    <table class="rtable">
+      <tr><th>產品線</th><th>應用</th><th>備註</th><th></th></tr>
+      ${(d.matrix_cells || []).map(c => `
+        <tr>
+          <td><input type="text" id="mcp_${c.id}" value="${esc(c.product_line)}" placeholder="例如：蕭特基二極體"></td>
+          <td><input type="text" id="mca_${c.id}" value="${esc(c.application)}" placeholder="例如：AI伺服器LDO保護"></td>
+          <td><input type="text" id="mcn_${c.id}" value="${esc(c.note)}" placeholder="備註"></td>
+          <td style="white-space:nowrap;">
+            <button class="btn-save small" onclick="saveMatrixCell(${c.id}, this)">存</button>
+            <button class="btn-row-remove" onclick="deleteMatrixCell(${c.id})">✕</button>
+          </td>
+        </tr>`).join('')}
+    </table>
+    <button class="btn-add-row" onclick="addMatrixCell()">+ 新增一列產品線</button>`;
+}
+function matrixRead(d) {
+  const cells = d.matrix_cells || [];
+  return cells.length ? `<table class="rtable"><tr><th>產品線</th><th>應用</th><th>備註</th></tr>
+    ${cells.map(c => `<tr><td>${esc(c.product_line)}</td><td>${esc(c.application)}</td><td>${esc(c.note)}</td></tr>`).join('')}
+  </table>` : fieldValue(null);
+}
+
+/* ─── 三條因果線在這家公司的具體展現 ─── */
+async function saveCausalLines(btn) {
+  const causal_lines = CAUSAL_TYPES.map(c => ({
+    line_type: c.key,
+    assessment: document.getElementById('cca_' + c.key).value,
+    evidence: document.getElementById('cce_' + c.key).value,
+  }));
+  await fetch(`/api/stocks/${stockId}/causal-lines`, {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ causal_lines })
+  });
+  detail.causal_lines = causal_lines;
+  flash(btn);
+}
+function causalEdit(d) {
+  return CAUSAL_TYPES.map(t => {
+    const c = (d.causal_lines || []).find(x => x.line_type === t.key) || {};
+    return `<div class="causal-line">
+      <div class="label">${t.label}</div>
+      <textarea id="cca_${t.key}" placeholder="判斷">${esc(c.assessment)}</textarea>
+      <textarea class="evidence" id="cce_${t.key}" placeholder="證據">${esc(c.evidence)}</textarea>
+    </div>`;
+  }).join('') + `<button class="btn-save small" onclick="saveCausalLines(this)">儲存因果線</button>`;
+}
+function causalRead(d) {
+  return CAUSAL_TYPES.map(t => {
+    const c = (d.causal_lines || []).find(x => x.line_type === t.key) || {};
+    return `<div class="causal-line"><div class="label">${t.label}</div>${fieldValue(c.assessment)}${c.evidence ? `<div class="evidence-text">證據：${esc(c.evidence)}</div>` : ''}</div>`;
+  }).join('');
+}
+
+/* ─── 可證偽假設（個股層級） ─── */
+async function addHypothesis(category) {
+  const hypothesis = prompt('新假設內容？');
+  if (!hypothesis) return;
+  const r = await fetch(`/api/stocks/${stockId}/hypotheses`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ hypothesis, category: category || null, sort_order: detail.hypotheses.length })
+  });
+  const j = await r.json();
+  detail.hypotheses.push({ id: j.id, hypothesis, falsifying_observation: '', current_status: '', category: category || null });
+  render();
+}
+async function saveHypothesis(hid, btn) {
+  const hypothesis = document.getElementById(`hh_${hid}`).value;
+  const falsifying_observation = document.getElementById(`hf_${hid}`).value;
+  const current_status = document.getElementById(`hc_${hid}`).value;
+  await fetch(`/api/stocks/${stockId}/hypotheses/${hid}`, {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ hypothesis, falsifying_observation, current_status })
+  });
+  flash(btn);
+}
+async function deleteHypothesis(hid) {
+  if (!confirm('刪除此假設？')) return;
+  await fetch(`/api/stocks/${stockId}/hypotheses/${hid}`, { method: 'DELETE' });
+  detail.hypotheses = detail.hypotheses.filter(h => h.id !== hid);
+  render();
+}
+// 假設用 category 分流：'cost_structure' 顯示在稼動率觀察卡片底下，其餘(含空白)顯示在通用的研究判斷區塊
+function costHypotheses() { return (detail.hypotheses || []).filter(h => h.category === 'cost_structure'); }
+function researchHypotheses() { return (detail.hypotheses || []).filter(h => h.category !== 'cost_structure'); }
+
+function hypothesesEdit(list) {
+  return (list || []).map(h => `
+    <div class="hyp-card">
+      <textarea id="hh_${h.id}" rows="2">${esc(h.hypothesis)}</textarea>
+      <textarea id="hf_${h.id}" rows="2" placeholder="會被推翻的觀察">${esc(h.falsifying_observation)}</textarea>
+      <input type="text" id="hc_${h.id}" value="${esc(h.current_status)}" placeholder="目前狀態">
+      <div class="row">
+        <button class="btn-save small" onclick="saveHypothesis(${h.id}, this)">儲存</button>
+        <button class="btn-del-hyp" onclick="deleteHypothesis(${h.id})">刪除</button>
+      </div>
+    </div>`).join('') || '<div style="color:var(--muted);font-size:12px;">尚無假設</div>';
+}
+function hypothesesRead(list) {
+  return (list && list.length) ? list.map(h => `
+    <div class="hyp-card">
+      <div style="font-weight:600;margin-bottom:4px;">${esc(h.hypothesis)}</div>
+      ${h.falsifying_observation ? `<div style="color:var(--muted);font-size:12.5px;margin-bottom:6px;">會被推翻的觀察：${esc(h.falsifying_observation)}</div>` : ''}
+      <span class="status-badge">${h.current_status ? esc(h.current_status) : '尚未追蹤'}</span>
+    </div>`).join('') : fieldValue(null);
+}
+
+/* ─── 驗證清單 ─── */
+async function saveVerificationItems(btn) {
+  const items = detail.verification_items.map((it, i) => ({
+    item: document.getElementById(`vi_${i}`).value,
+    is_checked: document.getElementById(`vc_${i}`).checked,
+  }));
+  await fetch(`/api/stocks/${stockId}/verification`, {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ items })
+  });
+  detail.verification_items = items;
+  flash(btn);
+}
+function addVerificationItem() {
+  detail.verification_items.push({ item: '', is_checked: false });
+  render();
+}
+function removeVerificationItem(i) {
+  detail.verification_items.splice(i, 1);
+  render();
+}
+function verificationEdit(d) {
+  return d.verification_items.map((it, i) => `
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:6px;">
+      <input type="checkbox" id="vc_${i}" ${it.is_checked ? 'checked' : ''}>
+      <input type="text" id="vi_${i}" value="${esc(it.item)}" placeholder="例如：月營收趨勢是否符合假設方向">
+      <button class="btn-row-remove" onclick="removeVerificationItem(${i})">✕</button>
+    </div>`).join('') +
+    `<button class="btn-add-row" onclick="addVerificationItem()">+ 新增項目</button>
+     <button class="btn-save small" onclick="saveVerificationItems(this)">儲存驗證清單</button>`;
+}
+function verificationRead(d) {
+  const items = d.verification_items || [];
+  return items.length ? items.map(it =>
+    `<div class="check-item ${it.is_checked ? 'checked' : ''}">${it.is_checked ? '☑' : '☐'} ${esc(it.item)}</div>`
+  ).join('') : fieldValue(null);
+}
+
+/* ─── 事件日誌 ─── */
+async function addEvent() {
+  const event_date = prompt('事件日期 (YYYY-MM-DD)？', new Date().toISOString().slice(0,10));
+  if (!event_date) return;
+  const event_desc = prompt('事件內容？');
+  if (!event_desc) return;
+  const r = await fetch(`/api/stocks/${stockId}/events`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ event_date, event_desc })
+  });
+  const j = await r.json();
+  detail.events.unshift({ id: j.id, event_date, event_desc, affected_hypothesis: null, impact_on_judgment: null });
+  render();
+}
+async function deleteEvent(eid) {
+  if (!confirm('刪除此事件？')) return;
+  await fetch(`/api/stocks/${stockId}/events/${eid}`, { method: 'DELETE' });
+  detail.events = detail.events.filter(e => e.id !== eid);
+  render();
+}
+function eventsEdit(d) {
+  return (d.events || []).map(e => `
+    <div class="event-item">
+      <span class="event-date">${esc(e.event_date)}</span>${esc(e.event_desc)}
+      <button class="btn-del-hyp" style="margin-left:8px" onclick="deleteEvent(${e.id})">刪除</button>
+    </div>`).join('') || '<div style="color:var(--muted);font-size:12px;">尚無事件</div>';
+}
+function eventsRead(d) {
+  const events = d.events || [];
+  return events.length ? events.map(e => `<div class="event-item"><span class="event-date">${esc(e.event_date)}</span>${esc(e.event_desc)}</div>`).join('') : fieldValue(null);
+}
+
+function switchTab(tab) { activeTab = tab; render(); }
+
+function quantTabContent() {
+  return costCard();
+  // 之後陸續加入的基本面量化指標(例如本益比估值)也放在這個function裡，同一個分頁
+}
+
+function researchTabContent(d) {
+  return `
+    <div class="card">
+      <div class="card-title">護城河 / 客戶關係 / v1 判斷</div>
+      ${viewMode ? profileRead(d) : profileEdit(d)}
+    </div>
+
+    <div class="card">
+      <div class="card-title">產品線 × 應用 <span class="hint">產業頁面的「產品×應用總覽」彙總表資料來源</span></div>
+      ${viewMode ? matrixRead(d) : matrixEdit(d)}
+    </div>
+
+    <div class="card">
+      <div class="card-title">三條因果線在這家公司的具體展現</div>
+      ${viewMode ? causalRead(d) : causalEdit(d)}
+    </div>
+
+    <div class="card">
+      <div class="card-title">可證偽假設（個股層級） <span class="hint">至少 2-3 條，附觀察指標——跟特定量化指標相關的假設放在該指標卡片底下，這裡是其他的</span></div>
+      ${viewMode ? hypothesesRead(researchHypotheses()) : hypothesesEdit(researchHypotheses())}
+      ${viewMode ? '' : '<button class="btn-add-row" onclick="addHypothesis()">+ 新增假設</button>'}
+    </div>
+
+    <div class="card">
+      <div class="card-title">驗證清單 <span class="hint">用具體財務數字/事件追蹤假設有沒有成立</span></div>
+      ${viewMode ? verificationRead(d) : verificationEdit(d)}
+    </div>
+
+    <div class="card">
+      <div class="card-title">事件日誌</div>
+      ${viewMode ? eventsRead(d) : eventsEdit(d)}
+      ${viewMode ? '' : '<button class="btn-add-row" onclick="addEvent()">+ 新增事件</button>'}
+    </div>
+  `;
+}
+
+function render() {
+  const d = detail;
+  document.getElementById('main').innerHTML = `
+    <div class="im-header">
+      <h1>${esc(d.stock_name || d.stock_id)}</h1>
+      <span class="stock-tag">${esc(d.stock_id)}</span>
+      <span class="spacer"></span>
+      <button class="btn-toggle" onclick="toggleViewMode()">${viewMode ? '✎ 編輯模式' : '👁 檢視模式'}</button>
+    </div>
+    <div class="industry-link">${d.industry_map_id ? `所屬產業：<a href="industry.html?id=${d.industry_map_id}">${esc(d.industry_name || '')}</a>` : '尚未歸屬任何產業地圖'}</div>
+
+    <div class="tab-nav">
+      <button class="tab-btn ${activeTab === 'quant' ? 'active' : ''}" onclick="switchTab('quant')">📊 基本面量化指標</button>
+      <button class="tab-btn ${activeTab === 'research' ? 'active' : ''}" onclick="switchTab('research')">📝 研究判斷</button>
+    </div>
+
+    ${activeTab === 'quant' ? quantTabContent() : researchTabContent(d)}
+  `;
+  initChartInteractivity();
+}
+
+load();
+</script>
+</body>
+</html>

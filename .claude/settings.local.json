@@ -74,7 +74,10 @@
       "Bash(mkdir -p /tmp_extract_check)",
       "Bash(mkdir -p __TRACKED_VAR__/framework)",
       "Bash(unzip -o taiwan-supply-chain-framework.zip -d __TRACKED_VAR__/framework)",
-      "Bash(find C:/Users/User/AppData/Local/Temp/claude/C--Users-User-Desktop-Claude-stock-analysis-taiwan-stock-analysis-taiwan-stock-analysis/1ad87167-5cab-4a61-8cff-3f581bd52aa5/scratchpad/framework/taiwan-supply-chain-framework -type f)"
+      "Bash(find C:/Users/User/AppData/Local/Temp/claude/C--Users-User-Desktop-Claude-stock-analysis-taiwan-stock-analysis-taiwan-stock-analysis/1ad87167-5cab-4a61-8cff-3f581bd52aa5/scratchpad/framework/taiwan-supply-chain-framework -type f)",
+      "mcp__claude_ai_Notion__notion-search",
+      "mcp__claude_ai_Notion__notion-fetch",
+      "Bash(tasklist //FI \"IMAGENAME eq node.exe\")"
     ]
   },
   "enableAllProjectMcpServers": true,

@@ -253,12 +253,19 @@ function subtractMonths(year, month, n) {
 /**
  * 抓取月營收，自動偵測歷史缺口並循序補抓
  *
- * - 指定 stockId：查 DB 最新月份，自動補到最新（最多 backfillMonths 個月）
+ * - 指定 stockId：偵測 [起始月, 目標月] 範圍內「實際缺哪些月份」並補抓——不是只看最新月份，
+ *   避免只往未來延伸、永遠不會回頭補中間或最前面缺口的問題（例如某檔股票只有近期資料、
+ *   更早的歷史完全沒有，YoY 會因此永遠算不出來，之前就是這樣被抓到）
+ * - 全新股票（DB完全沒有這檔的月營收）會多抓 12 個月當基期，讓範圍內最早的月份也有
+ *   去年同期資料可以算YoY，不然新加入覆蓋清單的股票，前一整年的YoY都會是空值
+ * - 補完缺口後，範圍內每個月的成長率一律重算一次（不管是不是這次新抓的）——
+ *   因為抓取當下鄰月/去年同月可能還沒進資料庫，算出來的MoM/YoY/累計會卡在null，
+ *   只重算「新抓的那個月」不夠，要連同已存在但可能因此變得可算的鄰近月份一起重算
  * - 不指定 stockId：對框架覆蓋清單（company_profiles.is_coverage_active=1）逐檔重用單股邏輯，
  *   確保每一檔都各自補到最新，不會被其他檔的完整度掩蓋
  *
  * @param {string} [stockId] - 指定股票代號（可選）
- * @param {number} [backfillMonths=14] - 最多往回補幾個月（預設 14 個月）
+ * @param {number} [backfillMonths=14] - 最多往回補幾個月（預設 14 個月，全新股票會再多抓 12 個月當YoY基期）
  */
 async function fetchRecentMonthlyRevenue(stockId, backfillMonths = 14) {
   // 目標月份：上個月（月營收在次月公佈）
@@ -268,43 +275,56 @@ async function fetchRecentMonthlyRevenue(stockId, backfillMonths = 14) {
   if (targetMonth === 0) { targetYear -= 1; targetMonth = 12; }
 
   if (stockId) {
-    // --- 單股模式：自動偵測缺口，循序補抓 ---
-    const [rows] = await pool.query(
-      'SELECT MAX(year * 100 + month) AS latest FROM monthly_revenue WHERE stock_id = ?',
-      [stockId]
+    // --- 單股模式：偵測範圍內實際缺口，循序補抓，再整段重算成長率 ---
+    // 「需不需要多抓12個月當YoY基期」不能只看有沒有資料（count=0），也不能只比對到
+    // 一般範圍的起點——範圍內「最舊」那個月要有YoY，資料要回溯到「範圍起點再往前12個月」，
+    // 不然一般 backfillMonths 範圍裡只有最後2個月能算出YoY，其餘全是空值（實測發現的）
+    const normalStart = subtractMonths(targetYear, targetMonth, backfillMonths - 1);
+    const baselineNeededFrom = subtractMonths(normalStart[0], normalStart[1], 12);
+    const [[{ earliest }]] = await pool.query(
+      'SELECT MIN(year * 100 + month) AS earliest FROM monthly_revenue WHERE stock_id = ?', [stockId]
     );
-    const latestCode = rows[0].latest; // e.g. 202501
-    const targetCode = targetYear * 100 + targetMonth;
+    const needsBaseline = earliest == null || earliest > baselineNeededFrom[0] * 100 + baselineNeededFrom[1];
+    const depth = backfillMonths + (needsBaseline ? 12 : 0);
+    const [startYear, startMonth] = subtractMonths(targetYear, targetMonth, depth - 1);
 
-    if (latestCode && latestCode >= targetCode) {
-      console.log(`${stockId} 月營收已是最新（${Math.floor(latestCode / 100)}/${latestCode % 100}），跳過`);
+    const [existingRows] = await pool.query(
+      `SELECT year, month FROM monthly_revenue WHERE stock_id = ?
+       AND (year > ? OR (year = ? AND month >= ?))
+       AND (year < ? OR (year = ? AND month <= ?))`,
+      [stockId, startYear, startYear, startMonth, targetYear, targetYear, targetMonth]
+    );
+    const existing = new Set(existingRows.map(r => `${r.year}-${r.month}`));
+
+    const missing = [];
+    for (let y = startYear, m = startMonth; y < targetYear || (y === targetYear && m <= targetMonth); m++) {
+      if (m > 12) { y++; m = 1; if (y > targetYear || (y === targetYear && m > targetMonth)) break; }
+      if (!existing.has(`${y}-${m}`)) missing.push([y, m]);
+    }
+
+    if (!missing.length) {
+      console.log(`${stockId} 月營收在補抓範圍內（${startYear}/${startMonth}~${targetYear}/${targetMonth}）已完整，跳過`);
       return 0;
     }
 
-    // 建立需要補抓的月份清單（由舊到新，確保 MoM 計算正確）
-    let startYear, startMonth;
-    if (!latestCode) {
-      // 從未有資料，往回抓 backfillMonths 個月
-      [startYear, startMonth] = subtractMonths(targetYear, targetMonth, backfillMonths - 1);
-    } else {
-      // 從最新月份的下一個月開始補
-      startMonth = (latestCode % 100) + 1;
-      startYear = Math.floor(latestCode / 100);
-      if (startMonth > 12) { startYear += 1; startMonth = 1; }
-    }
-
-    const gap = monthDiff(startYear, startMonth, targetYear, targetMonth) + 1;
-    if (gap <= 0) return 0;
-
-    console.log(`${stockId} 月營收缺口 ${gap} 個月（${startYear}/${startMonth} ~ ${targetYear}/${targetMonth}），循序補抓...`);
+    console.log(`${stockId} 月營收缺 ${missing.length} 個月（範圍 ${startYear}/${startMonth}~${targetYear}/${targetMonth}），循序補抓...`);
 
     let total = 0;
-    let y = startYear, m = startMonth;
-    for (let i = 0; i < gap; i++) {
+    for (const [y, m] of missing) {
       total += await fetchAndSaveMonthlyRevenue(y, m, stockId);
-      m++;
-      if (m > 12) { y++; m = 1; }
     }
+
+    // 整段範圍重算一次成長率，修掉抓取順序造成的殘留空值
+    const connection = await pool.getConnection();
+    try {
+      for (let y = startYear, m = startMonth; y < targetYear || (y === targetYear && m <= targetMonth); m++) {
+        if (m > 12) { y++; m = 1; if (y > targetYear || (y === targetYear && m > targetMonth)) break; }
+        await calculateGrowthRates(connection, y, m);
+      }
+    } finally {
+      connection.release();
+    }
+
     return total;
 
   } else {

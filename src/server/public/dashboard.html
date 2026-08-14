@@ -69,6 +69,11 @@ table.stock-table th:nth-child(7), table.stock-table td:nth-child(7) { width:15%
 .next-date.soon .days { color:var(--yellow); font-weight:600; }
 .price-cell { color:var(--muted); font-size:12px; }
 
+/* 日期來源標籤：官方公告 vs 系統依法定截止日推算，避免誤把推算值當成確定公佈日 */
+.src-tag { display:inline-block; font-size:10px; padding:0 5px; border-radius:6px; line-height:15px; }
+.src-tag.estimated { background:rgba(139,148,158,0.15); color:var(--muted); }
+.src-tag.official { background:rgba(240,136,62,0.15); color:var(--orange); }
+
 .mtag { display:inline-block; font-size:10.5px; padding:1px 7px; border-radius:8px; margin-right:4px; margin-bottom:2px; }
 .mtag.attention { background:rgba(227,179,65,0.15); color:var(--yellow); }
 .mtag.self_disclosure { background:rgba(248,81,73,0.15); color:var(--red); }
@@ -225,14 +230,20 @@ function daysLabel(days) {
   return `${days}天後`;
 }
 
-// 月營收 / 財報 共用：只顯示「下一次預期公布」，急迫或官方確認時才亮燈（顏色本身就代表意義，不再疊文字標籤）
+// 月營收 / 財報 共用：只顯示「下一次預期公布」，急迫或官方確認時才亮燈
 // 「有沒有歷史資料」跟「知不知道下次何時公布」是兩件獨立的事，不能讓前者擋住後者
+// source 標籤（推算/官方）另外用文字標出，因為顏色燈號只反映急迫度，容易讓人誤把「推算的法定截止日」當成確定公佈日
+function srcTag(source) {
+  if (source === 'official') return '<span class="src-tag official">官方</span>';
+  if (source === 'estimated') return '<span class="src-tag estimated">推算</span>';
+  return '';
+}
 function nextEventCell(meta, next) {
   if (!next) return meta && meta.has_data ? '—' : '<span class="mtag-none">尚無資料</span>';
   const days = daysUntil(next.expected_date);
   const cls = urgencyClass(days, next.source);
   const dot = cls ? `<span class="dot ${cls}"></span>` : '';
-  return `<div class="next-date ${cls}">${dot}${esc(next.period)} · ${esc(next.expected_date)} <span class="days">(${daysLabel(days)})</span></div>`;
+  return `<div class="next-date ${cls}">${dot}${esc(next.period)} · ${esc(next.expected_date)} <span class="days">(${daysLabel(days)})</span> ${srcTag(next.source)}</div>`;
 }
 
 // 股價僅供參考，框架不以此為結論依據，不需要急迫度燈號，純顯示日期
@@ -247,7 +258,7 @@ function earningsCallCell(call) {
   const days = daysUntil(call.expected_date);
   const cls = urgencyClass(days, 'official');
   const dot = cls ? `<span class="dot ${cls}"></span>` : '';
-  return `<div class="next-date ${cls}">${dot}${esc(call.period || '')} · ${esc(call.expected_date)} <span class="days">(${daysLabel(days)})</span></div>`;
+  return `<div class="next-date ${cls}">${dot}${esc(call.period || '')} · ${esc(call.expected_date)} <span class="days">(${daysLabel(days)})</span> ${srcTag('official')}</div>`;
 }
 
 function announceTags(list) {

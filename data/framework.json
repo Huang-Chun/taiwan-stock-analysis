@@ -1,5 +1,5 @@
 {
-  "exported_at": "2026-07-19T13:05:25.522Z",
+  "exported_at": "2026-08-14T13:12:48.144Z",
   "industries": [
     {
       "name": "先進封裝",
@@ -64,15 +64,127 @@
     },
     {
       "name": "功率元件",
-      "tech_background_notes": null,
+      "tech_background_notes": "## 基本功能：功率元件是做什麼用的\n\n想像電路裡的電流像水流。功率元件不處理「資訊」（那是CPU、記憶體在做的事），它處理的是**電力本身**——控制電要不要流、流多少、電壓要不要降下來。任何晶片都需要乾淨、穩定、適當電壓的電才能運作，功率元件就是負責把電源供應器送來的電，加工成晶片能用的樣子。\n\n## 元件分類：二極體/整流器 vs. MOSFET\n\n- **二極體/整流器**：像一個「只能單向開的水閘門」，讓電流只能往一個方向流，不能逆流。不需要外部訊號控制它，裝上去就自動運作。用途通常是保護電路（擋住不該流過來的反向電流）或做基本整流。\n- **MOSFET**（全名 Metal-Oxide-Semiconductor Field-Effect Transistor，金屬氧化物半導體場效電晶體）：像一個「可以被遙控開關大小的水龍頭」，需要一個額外的控制訊號（叫「閘極」）告訴它現在該開多大。因為可以被控制，才能拿來做電壓穩壓、快速調節這種比較複雜的工作，也就是接下來要說的 VRM。\n\n一句話記住差異：**二極體/整流器是「被動、單向、不能調」；MOSFET是「主動、可調、能精細控制」。**\n\n## 二極體子類：蕭特基、TVS、齊納\n\n二極體不是只有「整流」這一種角色，同樣是「單向、不能調」的被動元件，依特性可以再分成好幾種，用途完全不同：\n\n- **蕭特基二極體**（Schottky diode）：順向壓降低、切換速度快，適合做保護電路或輔助穩壓。\n- **TVS二極體**（全名 Transient Voltage Suppressor，暫態電壓抑制二極體）：專門吸收瞬間突波（例如電源瞬間飆高），反應速度要求極快，是保護電路裡對抗突波的關鍵元件。\n- **齊納二極體**（Zener diode）：功能不是整流也不是防突波，而是「電壓鉗制」——電壓超過特定值就導通，把電壓夾在固定範圍內，常用來當電壓參考基準。\n\n這三種都屬於二極體大類，但用途、製程、單價結構都不一樣，不要因為都叫「二極體」就放進同一個籃子比較。\n\n## 材料比較：Si vs. SiC vs. GaN\n\n晶片材料本身也分好幾種，且不是「新款取代舊款」的關係，而是「不同材料適合不同電壓範圍」：\n\n- **Si**（全名 Silicon，矽）：最普遍、最便宜、技術最成熟，但物理特性在電壓很高或頻率很高的情況下表現比較差。\n- **SiC**（全名 Silicon Carbide，碳化矽）：耐高壓（600伏特以上），適合電動車、工業用電這種大電流大電壓場景。\n- **GaN**（全名 Gallium Nitride，氮化鎵）：切換速度快、效率高，適合低電壓但要求快速反應的場景（例如快速充電器）。\n\n長期趨勢：**SiC會在「高電壓」這端把Si比下去，GaN會在「低電壓」這端把Si比下去**——Si材料正被兩邊夾擊，這是整個產業的結構性風險，跟哪家公司做得好不好無關。\n\n## 電源設計層級：VRM 與 SPS\n\n- **VRM**（全名 Voltage Regulator Module，電源穩壓模組）：晶片旁邊那一整組負責把電源供應器送來的電，降壓、穩壓、快速調整成晶片能用電壓的零件組合，MOSFET就是裝在這裡面。\n- **SPS**（全名 Smart Power Stage，智慧功率級）：VRM裡比較先進的做法，把MOSFET跟控制它的驅動晶片（driver IC）包在一起賣，比單獨賣MOSFET貴、也更難做。\n\n## 護城河來源\n\n功率元件的護城河很少來自材料壟斷（因為主流材料Si很普及），大部分來自**客戶已經認證過這個產品，不會輕易換供應商**——這種認證需要時間累積，不是有錢就能馬上追上，但也不是永久的城牆。長期真正的威脅是材料被換掉（SiC/GaN），不是被同業搶單。",
       "taiwan_participation_notes": "台廠幾乎完全缺席 SiC/GaN，中長期替代壓力是結構性的（SiC 吃掉 Si 高壓段、GaN 吃掉 Si 低壓段）。",
       "customer_relationship_notes": null,
-      "open_gaps": "六層地圖表格尚待補建（目前只有護城河結論與部分個股定位，未整理成六層表格）。富鼎已建成完整個股模板，其餘三檔尚待補齊。",
-      "layers": [],
+      "open_gaps": "五層地圖＋設備關注區已從 Notion「功率元件產業地圖」匯入完成（2026-08-12）。\n尚待補齊：\n- 名詞解釋卡片（MOSFET/Diode/IGBT/Si-SiC-GaN/晶碇/磊晶/VRM/PSU/PFC-LLC，Notion 已有現成速查表）\n- 第0章可再補電力流程圖（市電→整流→MOSFET→濾波→儲能→VRM→晶片）與 IGBT/晶碇/磊晶/PSU/PFC-LLC 幾個目前沒收錄的名詞\n- 主題中性矩陣、三條因果線（產業層級）、可證偽假設（產業層級）都還沒做\n- 強茂/德微/朋程三檔的因果線、可證偽假設、驗證清單都還沒建（目前只有富鼎做完整套）",
+      "layers": [
+        {
+          "layer": "設備",
+          "players": "Si製程設備（離子佈植、蝕刻、擴散爐、曝光機，技術成熟）；SiC晶碇生長爐（頭部廠商自製自用，不對外銷售）；SiC/GaN磊晶爐（少數歐美設備商寡占）",
+          "scarcity_source": "設備買不買得到、交期多長，決定每一層能多快擴產",
+          "moat_level": "高（SiC設備段）",
+          "key_structure": "SiC晶碇生長爐是SiC供給的物理瓶頸，擴產無法靠錢解決；分析任一層供給彈性時都要回來問「設備買得到嗎、交期多長」",
+          "sort_order": 0
+        },
+        {
+          "layer": "原材料",
+          "players": "矽（Si，石英砂提煉）、SiC粉末、GaN原材料、銅（封裝導線架）",
+          "scarcity_source": "地理分布——有錢就買得到，只是價格問題",
+          "moat_level": "低",
+          "key_structure": "矽、銅走大宗商品市場定價；SiC粉末、GaN原材料因供應商少屬寡占定價",
+          "sort_order": 0
+        },
+        {
+          "layer": "關鍵材料",
+          "players": "SiC晶圓（美國廠主導，中國新進者追趕）、GaN磊晶片（美日台皆有參與）、導線架（壁壘較低）",
+          "scarcity_source": "製程know-how——有錢也買不到同等品質，只有少數廠商做得出來",
+          "moat_level": "高（最難複製）",
+          "key_structure": "SiC晶圓靠高溫晶碇生長（2000°C以上，長一根要1-2週）後切片，是SiC整條鏈最核心稀缺節點；台灣整體在這層參與有限",
+          "sort_order": 0
+        },
+        {
+          "layer": "零組件製造",
+          "players": "富鼎8261、強茂2481、德微3675、朋程8255（Si元件主戰場）；SiC/GaN由歐美日IDM主導，台灣結構性缺席",
+          "scarcity_source": "製程精度＋客戶設計-in——一旦進BOM，重新認證成本高，客戶不輕易換",
+          "moat_level": "中等",
+          "key_structure": "材料替代方向是本產業最重要的慢變量：SiC取代高壓段Si、GaN取代低壓段Si",
+          "sort_order": 0
+        },
+        {
+          "layer": "模組整合",
+          "players": "PSU：台達電、光寶（台灣強勢）；VRM與SiC模組由國際IDM主導",
+          "scarcity_source": "系統設計能力＋與終端客戶的規格共同開發關係",
+          "moat_level": "中高",
+          "key_structure": "這層是功率元件的直接採購者——PSU/VRM廠決定BOM用誰的元件，是上游元件廠的需求入口",
+          "sort_order": 0
+        },
+        {
+          "layer": "終端產品",
+          "players": "AI伺服器（48V架構）、電動車（800V化）、工業設備、再生能源、消費電子",
+          "scarcity_source": "不適用（需求源頭，非稀缺節點）",
+          "moat_level": "不適用",
+          "key_structure": "需求拉力由此往上傳遞，規格要求也由此往上定義",
+          "sort_order": 0
+        }
+      ],
       "causal_lines": [],
-      "matrix": [],
+      "matrix": [
+        {
+          "stock_id": "2481",
+          "product_line": "蕭特基二極體",
+          "application": "AI伺服器(GB200 LDO輔助電路反向電流保護)",
+          "note": "非VRM電源路徑核心元件，僅保護角色"
+        },
+        {
+          "stock_id": "2481",
+          "product_line": "整流二極體・TVS",
+          "application": "一般整流／突波保護",
+          "note": "傳統核心業務"
+        },
+        {
+          "stock_id": "2481",
+          "product_line": "MOSFET・IGBT・SiC",
+          "application": "未特定單一應用",
+          "note": "2026年功率元件全面漲價敘事，非單一產品線受惠"
+        },
+        {
+          "stock_id": "3675",
+          "product_line": "整流器",
+          "application": "車用",
+          "note": "Si材料，被動單向元件，非VRM核心"
+        },
+        {
+          "stock_id": "8255",
+          "product_line": "整流器",
+          "application": "車用",
+          "note": "Si材料，被動單向元件，非VRM核心"
+        },
+        {
+          "stock_id": "8261",
+          "product_line": "MOSFET（轉型中加入SPS）",
+          "application": "VRM電源路徑（含AI伺服器電源）",
+          "note": "主動可調元件，VRM核心元件，正從分立MOSFET往SPS產品組合轉型"
+        }
+      ],
       "hypotheses": [],
-      "terms": []
+      "terms": [
+        {
+          "term": "IGBT",
+          "definition": "全名 Insulated Gate Bipolar Transistor（絕緣閘雙極電晶體）。可想成 MOSFET 跟傳統電晶體的混血：用 MOSFET 的方式控制開關（閘極電壓控制，省電），但導通後承受電流的能力更接近傳統電晶體，適合「高電壓、大電流」但切換速度要求沒那麼極端的場合（例如工業馬達、電動車主逆變器、變頻家電）。跟 MOSFET 是互補關係，不是取代——電壓電流規格更高的地方才輪到 IGBT 上場。",
+          "sort_order": 0
+        },
+        {
+          "term": "晶碇",
+          "definition": "英文 ingot。把矽（或碳化矽）原料熔融後，用單晶成長技術拉出來的一整根圓柱狀晶體，是所有半導體製程最上游的原始材料型態。晶碇再被切片，才變成一片一片的「晶圓」。SiC 晶碇的成長難度遠高於矽，是目前 SiC 功率元件成本居高不下、良率上不去的主要瓶頸之一。",
+          "sort_order": 1
+        },
+        {
+          "term": "磊晶",
+          "definition": "英文 epitaxy（磊晶成長，常簡稱 epi）。在切好的晶圓表面上，用氣相沉積的方式再「長」一層結構、雜質濃度都精準控制的薄膜單晶層，元件實際上是做在這層磊晶層上，而不是直接做在原始晶圓上。磊晶層的品質（厚度均勻度、缺陷密度）直接決定功率元件的耐壓與良率，是功率元件（尤其 SiC）製程中技術門檻很高的一段。",
+          "sort_order": 2
+        },
+        {
+          "term": "PSU",
+          "definition": "全名 Power Supply Unit（電源供應器）。把市電（交流電）轉換成電子設備內部需要的直流電壓的外部裝置，例如電腦機殼裡那顆方盒子、伺服器機櫃裡的電源模組。PSU 是整個供電鏈路最上游的一級轉換，轉換後的電還要再經過 VRM 才會變成晶片能直接使用的穩定低電壓。",
+          "sort_order": 3
+        },
+        {
+          "term": "PFC/LLC",
+          "definition": "PFC 全名 Power Factor Correction（功率因數校正），LLC 是一種諧振式電源拓樸（Inductor-Inductor-Capacitor 諧振槽命名而來）。兩者是 PSU 內部常見的兩級電路設計：PFC 先把輸入電流波形修正成接近正弦波、減少能量浪費並符合法規對「功率因數」的要求；LLC 接在 PFC 之後，負責把電壓做高效率的降壓與隔離轉換。兩者都是 PSU 設計裡的關鍵拓樸，也是市場上常見的功率元件測試/認證條件（例如某顆 MOSFET 標榜「適合 PFC/LLC 應用」）。",
+          "sort_order": 4
+        }
+      ]
     },
     {
       "name": "導線架",
@@ -141,11 +253,19 @@
       "v1_judgment": null,
       "v1_reasoning": null,
       "business_notes": "鉭質電容(KEMET)+MLCC+電阻，毛利 38-42%（最高），但 AI 曝險屬混合型（漲價+轉單，非純結構性）。",
+      "metric_notes": null,
       "open_gaps": null,
       "is_coverage_active": true,
       "causal_lines": [],
       "hypotheses": [],
-      "events": [],
+      "events": [
+        {
+          "event_date": "2026-08-12",
+          "event_desc": "月營收公布：2026-07 營收 161.31 億，YoY 待計算（自動偵測，待覆盤）",
+          "affected_hypothesis": null,
+          "impact_on_judgment": null
+        }
+      ],
       "verification_items": []
     },
     {
@@ -161,11 +281,19 @@
       "v1_judgment": null,
       "v1_reasoning": null,
       "business_notes": null,
+      "metric_notes": null,
       "open_gaps": null,
       "is_coverage_active": true,
       "causal_lines": [],
       "hypotheses": [],
-      "events": [],
+      "events": [
+        {
+          "event_date": "2026-08-12",
+          "event_desc": "月營收公布：2026-07 營收 13.28 億，YoY 待計算（自動偵測，待覆盤）",
+          "affected_hypothesis": null,
+          "impact_on_judgment": null
+        }
+      ],
       "verification_items": []
     },
     {
@@ -181,11 +309,19 @@
       "v1_judgment": null,
       "v1_reasoning": null,
       "business_notes": "鋁質電解電容，傳統市場轉單外溢。",
+      "metric_notes": null,
       "open_gaps": null,
       "is_coverage_active": true,
       "causal_lines": [],
       "hypotheses": [],
-      "events": [],
+      "events": [
+        {
+          "event_date": "2026-08-12",
+          "event_desc": "月營收公布：2026-07 營收 6.21 億，YoY 待計算（自動偵測，待覆盤）",
+          "affected_hypothesis": null,
+          "impact_on_judgment": null
+        }
+      ],
       "verification_items": []
     },
     {
@@ -201,11 +337,19 @@
       "v1_judgment": null,
       "v1_reasoning": null,
       "business_notes": "半固態鋁質電解電容，新進入 Vera Rubin BOM。",
+      "metric_notes": null,
       "open_gaps": null,
       "is_coverage_active": true,
       "causal_lines": [],
       "hypotheses": [],
-      "events": [],
+      "events": [
+        {
+          "event_date": "2026-08-12",
+          "event_desc": "月營收公布：2026-07 營收 13.28 億，YoY 待計算（自動偵測，待覆盤）",
+          "affected_hypothesis": null,
+          "impact_on_judgment": null
+        }
+      ],
       "verification_items": []
     },
     {
@@ -220,12 +364,28 @@
       "integration_risk_notes": null,
       "v1_judgment": null,
       "v1_reasoning": null,
-      "business_notes": "蕭特基二極體為主，GB200 輔助電路中的 LDO 二極體角色。",
+      "business_notes": "台灣最大二極體IDM廠之一，產品組合橫跨前置技術背景中的**整流二極體、蕭特基、TVS**，另外也生產MOSFET、IGBT、SiC元件，不只做蕭特基單一產品線。在GB200中擔任LDO（全名 Low-Dropout Regulator，低壓差穩壓器）輔助電路的反向電流保護角色（蕭特基），不是VRM電源路徑的核心元件。2026年功率元件全面漲價潮中，公司整體產品線都被算入漲價敘事，非單一產品線受惠。",
+      "metric_notes": "**使用流程(平常這樣看就好，不用每次都重新推導)：**\n1. 打開股票頁面，看「稼動率觀察」卡片最上面的「早期觀察」badge——月營收MoM連續幾個月的方向，當第一層雷達，不用每個月深挖\n2. 財報公佈後，看COGS/毛利率結構表最新一季的「自動判讀」欄——系統已經算好健康/中性/不健康，不用自己重新推導報價還是量增\n3. 只記一條判斷紅線：**毛利率有沒有惡化**\n   - 健康 → 沒事，正常監控就好\n   - 中性 → 記住這季，觀察下一季是不是持續同樣模式，不用馬上寫假設\n   - 不健康 → 才值得認真看一下：COGS動多少、營收動多少，配合早期觀察badge有沒有更近期的訊號\n4. **只有「不健康」連續出現，或這檔正好是你在考慮買進/加碼/賣出的關鍵時刻**，才升級成寫「可證偽假設」，把懷疑的原因跟驗證條件寫下來——平常季度監控不需要每次都寫\n\n以下是背後的判斷邏輯跟細節，想確認系統判讀怎麼來的時候再展開看。\n\n## 為什麼三個一起看\n\n營收=P(價)×Q(量)，COGS=FC(固定成本)+VC(單位變動成本)×Q。單看營收分不出漲價還是量增；單看COGS上升也不夠，因為VC(原料/單位投入成本)自己上漲也會讓COGS動，跟Q沒關係。**COGS只受出貨量影響、不受售價影響**，是唯一能把「量」單獨拆出來看的乾淨訊號，這也是為什麼要三個數字一起看，缺一個都會誤判。之前用過DOL(營業槓桿度=毛利QoQ÷營收QoQ)，後來拿掉了：DOL沒辦法分辨漲價還是量增，兩者都會讓DOL遠大於1，漲價甚至比量增更誇張，而且是個要繞好幾層才能解釋清楚的比率，不直覺，直接看這三個數字更清楚。\n\n## 判斷邏輯\n\n毛利率有沒有惡化是唯一不能妥協的健康紅線，不管營收漲跌、不管背後是報價/量增/成本，毛利率停滯或惡化就是不健康。營收方向只負責解釋「為什麼」。\n\n| 營收╲毛利率 | 上升 | 持平 | 下降 |\n|---|---|---|---|\n| 上升 | 報價驅動 或 量增/稼動率提升 | 假性成長，留意是否被成本抵銷或純轉嫁 | 營收成長但單位成本侵蝕毛利，不健康 |\n| 持平 | 成本改善，量未明顯變化 | 持平，無明顯訊號 | 單位成本上升，量沒動，不健康 |\n| 下降 | 量縮但守住價格，防禦性健康 | 量縮，成本同步收縮 | 量縮＋固定成本僵固，最需留意 |\n\n「營收上升、毛利率也上升」是唯一報價/量增分不出來的情況，只有這一格需要另外檢查COGS自己有沒有動：COGS幾乎沒動(QoQ在±1.5個百分點內)→報價驅動；COGS也跟著明顯動→量增/稼動率驅動。系統的自動判讀已經套用這個邏輯。\n\n## 案例：強茂 2025Q3~2026Q1\n\n- **2025Q3**：營收-3.83%，COGS跌更多(-4.74%)，毛利率+0.65pt → 量縮但守住價格(防禦性健康)\n- **2025Q4**：營收+2.53%，COGS只動+0.49%，毛利率+1.37pt → COGS幾乎沒動，報價驅動，對得上「2026年功率元件全面漲價潮」的敘事\n- **2026Q1**：營收+2.05%，COGS也跟著+1.95%(幾乎同步)，毛利率只+0.06pt → 量增但毛利率沒跟上，假性成長，量真的在動但沒轉換成毛利品質改善\n\n## 注意事項\n\n1. 只有3-4個資料點時雜訊很大，不要看單一季就下結論，要看趨勢\n2. 這是落後指標(季報，公佈延遲約45天)，不適合當進場時機訊號，只適合驗證月營收異常背後的機制對不對——月營收的「早期觀察」badge是唯一不用等季報的訊號，但它只能告訴你有沒有動靜，不能分辨原因\n3. 產能瓶頸型護城河(地理稀缺性/製程know-how稀缺性)的稼動率週期通常以季/年為單位，慢一季確認不致命；純漲價/供需缺口型的故事翻臉快，等確認可能已經太晚\n4. COGS是合併報表整體數字，看不到分產品線的量變化；也包含FC，如果該季有大筆資產減損或一次性認列，COGS QoQ會被干擾，看到異常跳動要先排除這種情況\n5. 一定要交叉檢查：是否有公司自結/法說會直接提到稼動率數字、是否有擴產公告、是否有已知的原料成本上漲敘事(會讓COGS上升但不是量增)\n\n## 數字範例(機制驗證用)\n\n以下是用同一組假設參數(P=100/單位、VC=60/單位、FC=2000/季)推導出來的示範情境，不是強茂的真實數字，是用來驗證判斷邏輯對不對用的參考表。\n\n| 情境 | 設定變化 | 營收 | COGS | 毛利 | 毛利率 | DOL | 這個例子證明了什麼 |\n|---|---|---|---|---|---|---|---|\n| ① 純量增(70→80) | 只有Q漲，P/VC/FC不變 | 7000→8000(+14.3%) | 6200→6800(+9.7%) | 800→1200(+50%) | 11.4%→15% | 3.5x | 稼動率提升會讓毛利率自然上升——固定成本被更多產量分攤，COGS漲得比營收慢 |\n| ② 再量增(80→90) | 接續①，Q再往上 | 8000→9000(+12.5%) | 6800→7400 | 1200→1600(+33.3%) | 15%→17.8% | 2.67x | DOL不是常數，越接近滿載會自然收斂變小(3.5x→2.67x)，邊際攤提效益遞減 |\n| ③ 純漲價(70維持，P漲到114.3) | 只有P漲，Q不變，配成跟①一樣的+14.3%營收成長方便對比 | 7000→8000(+14.3%) | 6200→6200(+0%) | 800→1800(+125%) | 11.4%→22.5% | 8.75x | 推翻「DOL能分辨報價還是量增」——純漲價的DOL反而比純量增(①)更高，不是更低；COGS完全不受漲價影響，是唯一能拆出「量」的乾淨訊號 |\n| ④ 純原料成本上漲(VC:60→66) | 只有VC漲10%，Q和P都不變 | 7000→7000(+0%) | 6200→6620(+6.8%) | 800→380(-52.5%) | 11.4%→5.4% | — | COGS動了、沒有折舊大改動，不能直接當成稼動率訊號——COGS上升也可能是原料成本自己在漲，這種情況毛利率會被壓縮，不是提升，COGS要搭配毛利率方向一起看 |\n| ⑤ 用①回答「營收漲比毛利多嗎」 | 同①，換角度看 | 增加+1000(基期7000)=+14.3% | — | 增加+400(基期800)=+50% | — | — | 破解「營收成長率會比毛利成長率高」的誤解——絕對金額上營收確實漲得多，但毛利的起始基期小很多(800 vs 7000)，換算成%之後毛利反而漲得更兇。基期大小差異才是關鍵 |\n\n②④沒有列DOL：②單純接續①示範收斂趨勢；④毛利是負成長，用比率解讀會失真，直接看毛利率崩掉(11.4%→5.4%)更清楚。\n\n## 這些指標能不能抓轉折點\n\n**能做到：驗證方向。** 月營收的早期觀察badge告訴你「有動靜」，COGS/毛利率結構的季度判讀告訴你「這個動靜健不健康、背後是什麼原因」，這是這套系統的核心強項，可靠。\n\n**部分能做到：標示轉折可能已經開始，但是事後才確認，不是預測。** 強茂DOL從2.77收斂到1.10這種「毛利率還在漲、但漲幅在收斂」的模式，是稼動率接近滿載的早期訊號，但這是「看到已經開始收斂」才知道，不是「預測會收斂」。財報是落後指標(公佈延遲約45天)，等你看到COGS/毛利率確認轉折，市場可能已經反應過，這點在注意事項也提過。\n\n**做不到：提前預測轉折。** 真正能提前抓到轉折點的是質化、外部的資訊——客戶端拉貨力道、同業擴產/減產動態、通路庫存水位、產業報價指數——這些不在財報數字裡，只能另外記錄到事件日誌。這套COGS/營收/毛利率系統本質上是「驗證+確認」工具，不是「預測」工具，這個定位要記清楚，不要期待它能提前抓轉折點。",
       "open_gaps": null,
       "is_coverage_active": true,
       "causal_lines": [],
-      "hypotheses": [],
-      "events": [],
+      "hypotheses": [
+        {
+          "hypothesis": "強茂2026Q2營業成本QoQ(+14.78%)幾乎追平營收QoQ(+15.62%)，毛利率只小幅+0.49pt，反映上游原料成本上升侵蝕了原本該有的量增/漲價紅利。若功率元件產業鏈報價持續上漲、且強茂具備真正定價權(非單純成本轉嫁)，預期未來季度營業成本QoQ會重新明顯落後於營收QoQ(類似2025Q4的脫鉤模式)，屆時毛利率應出現有意義的擴張。",
+          "falsifying_observation": "若2026Q3營業成本QoQ持續緊跟營收QoQ(差距<2個百分點)，代表仍在單純成本轉嫁階段，毛利率不會擴張，此假設不成立；若毛利率持續停滯甚至惡化，代表上游成本壓力尚未緩解或強茂沒有定價權。另外，就算毛利率假設成立，不代表現在是好的進場點——這只驗證基本面故事，不涉及股價是否已經price in。",
+          "current_status": "2026-08-14記錄。股價脈絡：6月初約135-146，7/6衝高到227.5(可能已price in報價上漲題材)，之後拉回，8/13收143，接近6月起漲點。7月中旬拉回的具體原因尚未查證(題材證偽 vs 系統性回檔)，這點會影響「基本面故事成立=值得進場」這個推論是否站得住腳，需要另外確認。",
+          "category": "cost_structure",
+          "sort_order": 0
+        }
+      ],
+      "events": [
+        {
+          "event_date": "2026-08-12",
+          "event_desc": "月營收公布：2026-07 營收 14.48 億，YoY 待計算（自動偵測，待覆盤）",
+          "affected_hypothesis": null,
+          "impact_on_judgment": null
+        }
+      ],
       "verification_items": []
     },
     {
@@ -241,11 +401,19 @@
       "v1_judgment": null,
       "v1_reasoning": null,
       "business_notes": null,
+      "metric_notes": null,
       "open_gaps": null,
       "is_coverage_active": true,
       "causal_lines": [],
       "hypotheses": [],
-      "events": [],
+      "events": [
+        {
+          "event_date": "2026-08-12",
+          "event_desc": "月營收公布：2026-07 營收 7.40 億，YoY 待計算（自動偵測，待覆盤）",
+          "affected_hypothesis": null,
+          "impact_on_judgment": null
+        }
+      ],
       "verification_items": []
     },
     {
@@ -261,11 +429,19 @@
       "v1_judgment": null,
       "v1_reasoning": null,
       "business_notes": "標準 MLCC+車用，轉型中。",
+      "metric_notes": null,
       "open_gaps": null,
       "is_coverage_active": true,
       "causal_lines": [],
       "hypotheses": [],
-      "events": [],
+      "events": [
+        {
+          "event_date": "2026-08-12",
+          "event_desc": "月營收公布：2026-07 營收 44.44 億，YoY 待計算（自動偵測，待覆盤）",
+          "affected_hypothesis": null,
+          "impact_on_judgment": null
+        }
+      ],
       "verification_items": []
     },
     {
@@ -281,11 +457,19 @@
       "v1_judgment": null,
       "v1_reasoning": null,
       "business_notes": "高壓 NP0 MLCC，直接切入 Vera Rubin BOM，毛利 35-40%，護城河最高。",
+      "metric_notes": null,
       "open_gaps": null,
       "is_coverage_active": true,
       "causal_lines": [],
       "hypotheses": [],
-      "events": [],
+      "events": [
+        {
+          "event_date": "2026-08-12",
+          "event_desc": "月營收公布：2026-07 營收 15.01 億，YoY 待計算（自動偵測，待覆盤）",
+          "affected_hypothesis": null,
+          "impact_on_judgment": null
+        }
+      ],
       "verification_items": []
     },
     {
@@ -301,11 +485,19 @@
       "v1_judgment": null,
       "v1_reasoning": null,
       "business_notes": "全球龍頭，美系雲端 AI ASIC ~70%份額，NVIDIA Blackwell 第二供應商。",
+      "metric_notes": null,
       "open_gaps": null,
       "is_coverage_active": true,
       "causal_lines": [],
       "hypotheses": [],
-      "events": [],
+      "events": [
+        {
+          "event_date": "2026-08-12",
+          "event_desc": "月營收公布：2026-07 營收 162.54 億，YoY 待計算（自動偵測，待覆盤）",
+          "affected_hypothesis": null,
+          "impact_on_judgment": null
+        }
+      ],
       "verification_items": []
     },
     {
@@ -321,11 +513,19 @@
       "v1_judgment": null,
       "v1_reasoning": null,
       "business_notes": "份額最小 ~4%，第三供應商進入 AI GPU 供應鏈，母公司和碩。",
+      "metric_notes": null,
       "open_gaps": null,
       "is_coverage_active": true,
       "causal_lines": [],
       "hypotheses": [],
-      "events": [],
+      "events": [
+        {
+          "event_date": "2026-08-12",
+          "event_desc": "月營收公布：2026-07 營收 45.49 億，YoY 待計算（自動偵測，待覆盤）",
+          "affected_hypothesis": null,
+          "impact_on_judgment": null
+        }
+      ],
       "verification_items": []
     },
     {
@@ -341,11 +541,19 @@
       "v1_judgment": null,
       "v1_reasoning": null,
       "business_notes": "TLVR 電感，車用為主/AI為輔。",
+      "metric_notes": null,
       "open_gaps": null,
       "is_coverage_active": true,
       "causal_lines": [],
       "hypotheses": [],
-      "events": [],
+      "events": [
+        {
+          "event_date": "2026-08-12",
+          "event_desc": "月營收公布：2026-07 營收 8.76 億，YoY 待計算（自動偵測，待覆盤）",
+          "affected_hypothesis": null,
+          "impact_on_judgment": null
+        }
+      ],
       "verification_items": []
     },
     {
@@ -360,12 +568,20 @@
       "integration_risk_notes": null,
       "v1_judgment": null,
       "v1_reasoning": null,
-      "business_notes": "整流器/車用為主。",
+      "business_notes": "產品屬於前置技術背景中的**整流器**角色（被動、單向），材料為Si，車用為主，不是VRM電源路徑的核心元件。",
+      "metric_notes": null,
       "open_gaps": null,
       "is_coverage_active": true,
       "causal_lines": [],
       "hypotheses": [],
-      "events": [],
+      "events": [
+        {
+          "event_date": "2026-08-12",
+          "event_desc": "月營收公布：2026-07 營收 2.91 億，YoY 待計算（自動偵測，待覆盤）",
+          "affected_hypothesis": null,
+          "impact_on_judgment": null
+        }
+      ],
       "verification_items": []
     },
     {
@@ -381,11 +597,19 @@
       "v1_judgment": null,
       "v1_reasoning": null,
       "business_notes": "兩大業務：半導體封測(~64%) + USI 的 EMS(~35%)。台灣廠 CoWoS-L 產出的主要合作夥伴（尤其 NVIDIA）。中期風險：客戶晶圓產能轉移到 Arizona 會擴大 Amkor 可觸及份額，壓縮 ASE 邊際利潤。",
+      "metric_notes": null,
       "open_gaps": null,
       "is_coverage_active": true,
       "causal_lines": [],
       "hypotheses": [],
-      "events": [],
+      "events": [
+        {
+          "event_date": "2026-08-12",
+          "event_desc": "月營收公布：2026-07 營收 737.84 億，YoY 待計算（自動偵測，待覆盤）",
+          "affected_hypothesis": null,
+          "impact_on_judgment": null
+        }
+      ],
       "verification_items": []
     },
     {
@@ -401,11 +625,19 @@
       "v1_judgment": null,
       "v1_reasoning": null,
       "business_notes": "毛利率關鍵驅動：浮動計價機制反應速度 + 稼動率回升至 70-75% + 產品組合往高規格移動。",
+      "metric_notes": null,
       "open_gaps": null,
       "is_coverage_active": true,
       "causal_lines": [],
       "hypotheses": [],
-      "events": [],
+      "events": [
+        {
+          "event_date": "2026-08-12",
+          "event_desc": "月營收公布：2026-07 營收 6.05 億，YoY 待計算（自動偵測，待覆盤）",
+          "affected_hypothesis": null,
+          "impact_on_judgment": null
+        }
+      ],
       "verification_items": []
     },
     {
@@ -421,11 +653,19 @@
       "v1_judgment": null,
       "v1_reasoning": null,
       "business_notes": "固態高分子電容，NVIDIA Vchip 約 80% 份額，毛利 30-35%。",
+      "metric_notes": null,
       "open_gaps": null,
       "is_coverage_active": true,
       "causal_lines": [],
       "hypotheses": [],
-      "events": [],
+      "events": [
+        {
+          "event_date": "2026-08-12",
+          "event_desc": "月營收公布：2026-07 營收 5.06 億，YoY 待計算（自動偵測，待覆盤）",
+          "affected_hypothesis": null,
+          "impact_on_judgment": null
+        }
+      ],
       "verification_items": []
     },
     {
@@ -441,11 +681,19 @@
       "v1_judgment": null,
       "v1_reasoning": null,
       "business_notes": null,
+      "metric_notes": null,
       "open_gaps": null,
       "is_coverage_active": true,
       "causal_lines": [],
       "hypotheses": [],
-      "events": [],
+      "events": [
+        {
+          "event_date": "2026-08-12",
+          "event_desc": "月營收公布：2026-07 營收 15.56 億，YoY 待計算（自動偵測，待覆盤）",
+          "affected_hypothesis": null,
+          "impact_on_judgment": null
+        }
+      ],
       "verification_items": []
     },
     {
@@ -461,11 +709,19 @@
       "v1_judgment": null,
       "v1_reasoning": null,
       "business_notes": "TLVR 電感，滲透 NVIDIA 每一代平台，毛利 33-38%。",
+      "metric_notes": null,
       "open_gaps": null,
       "is_coverage_active": true,
       "causal_lines": [],
       "hypotheses": [],
-      "events": [],
+      "events": [
+        {
+          "event_date": "2026-08-12",
+          "event_desc": "月營收公布：2026-07 營收 1.92 億，YoY 待計算（自動偵測，待覆盤）",
+          "affected_hypothesis": null,
+          "impact_on_judgment": null
+        }
+      ],
       "verification_items": []
     },
     {
@@ -481,11 +737,19 @@
       "v1_judgment": null,
       "v1_reasoning": null,
       "business_notes": "800G switch ASIC，議價彈性高。",
+      "metric_notes": null,
       "open_gaps": null,
       "is_coverage_active": true,
       "causal_lines": [],
       "hypotheses": [],
-      "events": [],
+      "events": [
+        {
+          "event_date": "2026-08-12",
+          "event_desc": "月營收公布：2026-07 營收 54.40 億，YoY 待計算（自動偵測，待覆盤）",
+          "affected_hypothesis": null,
+          "impact_on_judgment": null
+        }
+      ],
       "verification_items": []
     },
     {
@@ -500,12 +764,20 @@
       "integration_risk_notes": null,
       "v1_judgment": null,
       "v1_reasoning": null,
-      "business_notes": "整流器/車用為主。",
+      "business_notes": "產品屬於前置技術背景中的**整流器**角色（被動、單向），材料為Si，車用為主，不是VRM電源路徑的核心元件。",
+      "metric_notes": null,
       "open_gaps": null,
       "is_coverage_active": true,
       "causal_lines": [],
       "hypotheses": [],
-      "events": [],
+      "events": [
+        {
+          "event_date": "2026-08-12",
+          "event_desc": "月營收公布：2026-07 營收 6.66 億，YoY 待計算（自動偵測，待覆盤）",
+          "affected_hypothesis": null,
+          "impact_on_judgment": null
+        }
+      ],
       "verification_items": []
     },
     {
@@ -520,7 +792,8 @@
       "integration_risk_notes": "SiC/GaN對Si基功率元件的中長期替代壓力（見產業地圖），富鼎SiC布局仍在早期，量產時程未確認。國際大廠（Infineon、onsemi、ST、Wolfspeed）在高壓/車用MOSFET市場份額領先，富鼎需靠AI伺服器SPS轉單維持成長動能。",
       "v1_judgment": "Fully priced, watchlist not buy",
       "v1_reasoning": "毛利率穩定在37-38%（2025Q2~2026Q1），但ROE偏低（1.45%~3.99%），成長性尚未反映在股東權益報酬上。市場敘事聚焦AI伺服器800V高壓直流架構帶動SPS需求，2026年營收成長性看法偏樂觀，但月營收目前僅個位數波動（2026Q1營收7.8億，MoM -0.27%~+5.04%），尚未看到敘事兌現的明確訊號。",
-      "business_notes": "低壓 MOSFET，VRM 核心電源路徑，VRM 定位最強。",
+      "business_notes": "產品屬於前置技術背景中的**MOSFET**角色（主動、可調），材料為Si，是VRM（電源穩壓模組）核心電源路徑元件，目前也在往「從賣分立MOSFET升級成賣SPS（智慧功率級）」的產品組合方向轉型。",
+      "metric_notes": null,
       "open_gaps": "鴻海/國巨策略入股是否已轉化為具體訂單或客戶名單未確認；SiC產品化與客戶認證時程未確認；安世半導體(Nexperia)轉單潮對富鼎的實際受益程度未確認。",
       "is_coverage_active": true,
       "causal_lines": [
@@ -545,22 +818,31 @@
           "hypothesis": "富鼎在AI伺服器800V高壓直流架構轉換中的SPS產品滲透率將顯著提升，帶動2026年營收雙位數成長",
           "falsifying_observation": "月營收年增率持續低於個位數成長，或法說會未提及SPS/AI伺服器出貨貢獻佔比",
           "current_status": "待驗證——2026Q1營收7.8億，月營收MoM在-0.27%~+5.04%間波動，尚未看到敘事兌現的明確訊號",
+          "category": null,
           "sort_order": 0
         },
         {
           "hypothesis": "鴻海/國巨的策略入股能轉化為實質訂單或供應鏈綁定優勢",
           "falsifying_observation": "鴻海系伺服器組裝業務未實際採用富鼎MOSFET，或客戶集中度未提升",
           "current_status": "待確認——公開資訊僅提及兩大股東關係，未見具體客戶名單佐證訂單轉化",
+          "category": null,
           "sort_order": 0
         },
         {
           "hypothesis": "SiC產品線布局能在中長期抵禦國際大廠（Infineon/onsemi/Wolfspeed）取代低壓Si MOSFET市場的壓力",
           "falsifying_observation": "富鼎SiC產品遲遲未量產出貨，或客戶認證進度明顯落後同業",
           "current_status": "待確認——公開資訊僅提及「積極布局」，無具體量產時程",
+          "category": null,
           "sort_order": 0
         }
       ],
       "events": [
+        {
+          "event_date": "2026-08-12",
+          "event_desc": "月營收公布：2026-07 營收 2.93 億，YoY 待計算（自動偵測，待覆盤）",
+          "affected_hypothesis": null,
+          "impact_on_judgment": null
+        },
         {
           "event_date": "2026-07-18",
           "event_desc": "月營收公布：2026-06 營收 2.96 億，YoY 待計算（自動偵測，待覆盤）",

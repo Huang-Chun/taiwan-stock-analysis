@@ -132,11 +132,12 @@ async function saveFrameworkSnapshot() {
       key_structure_status: cp.key_structure_status, relationship_type: cp.relationship_type,
       supplier_multiplicity: cp.supplier_multiplicity, integration_risk_notes: cp.integration_risk_notes,
       v1_judgment: cp.v1_judgment, v1_reasoning: cp.v1_reasoning, business_notes: cp.business_notes,
+      metric_notes: cp.metric_notes,
       open_gaps: cp.open_gaps, is_coverage_active: !!cp.is_coverage_active,
       causal_lines: compCausal.filter(c => c.stock_id === cp.stock_id)
         .map(({ line_type, assessment, evidence }) => ({ line_type, assessment, evidence })),
       hypotheses: compHyps.filter(h => h.stock_id === cp.stock_id)
-        .map(({ hypothesis, falsifying_observation, current_status, sort_order }) => ({ hypothesis, falsifying_observation, current_status, sort_order })),
+        .map(({ hypothesis, falsifying_observation, current_status, category, sort_order }) => ({ hypothesis, falsifying_observation, current_status, category, sort_order })),
       events: compEvents.filter(e => e.stock_id === cp.stock_id)
         .map(({ event_date, event_desc, affected_hypothesis, impact_on_judgment }) => ({ event_date, event_desc, affected_hypothesis, impact_on_judgment })),
       verification_items: compVerif.filter(v => v.stock_id === cp.stock_id)
@@ -213,12 +214,12 @@ async function autoImportFrameworkIfEmpty() {
         `INSERT INTO company_profiles
          (stock_id, industry_map_id, layer, moat_source, moat_level, key_structure_status,
           relationship_type, supplier_multiplicity, integration_risk_notes,
-          v1_judgment, v1_reasoning, business_notes, open_gaps, is_coverage_active)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+          v1_judgment, v1_reasoning, business_notes, metric_notes, open_gaps, is_coverage_active)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
         [c.stock_id, industryMapId, c.layer || null, c.moat_source || null, c.moat_level || null,
          c.key_structure_status || null, c.relationship_type || null, c.supplier_multiplicity || null,
          c.integration_risk_notes || null, c.v1_judgment || null, c.v1_reasoning || null, c.business_notes || null,
-         c.open_gaps || null, !!c.is_coverage_active]
+         c.metric_notes || null, c.open_gaps || null, !!c.is_coverage_active]
       );
       for (const cl of (c.causal_lines || [])) {
         await pool.query(
@@ -228,8 +229,8 @@ async function autoImportFrameworkIfEmpty() {
       }
       for (const h of (c.hypotheses || [])) {
         await pool.query(
-          `INSERT INTO company_hypotheses (stock_id, hypothesis, falsifying_observation, current_status, sort_order) VALUES (?,?,?,?,?)`,
-          [c.stock_id, h.hypothesis, h.falsifying_observation || null, h.current_status || null, h.sort_order || 0]
+          `INSERT INTO company_hypotheses (stock_id, hypothesis, falsifying_observation, current_status, category, sort_order) VALUES (?,?,?,?,?,?)`,
+          [c.stock_id, h.hypothesis, h.falsifying_observation || null, h.current_status || null, h.category || null, h.sort_order || 0]
         );
       }
       for (const e of (c.events || [])) {
@@ -251,7 +252,7 @@ async function autoImportFrameworkIfEmpty() {
   }
 }
 
-const { analyzeRevenueTrend, calculateValuation, getFinancialSummary } = require('../analysis/fundamentalAnalysis');
+const { analyzeRevenueTrend, calculateValuation, getFinancialSummary, analyzeCostStructure } = require('../analysis/fundamentalAnalysis');
 const { getPriceFreshness, getRevenueFreshness, getFinancialFreshness } = require('../utils/dataFreshness');
 const { runDailySync } = require('../crawler/dailySync');
 const { getNextQuarterDeadline } = require('../crawler/fetchFinancialStatements');
@@ -376,6 +377,17 @@ app.get('/api/stocks/:stockId/revenue', async (req, res) => {
 app.get('/api/stocks/:stockId/financial', async (req, res) => {
   try {
     const result = await getFinancialSummary(req.params.stockId);
+    res.json({ success: true, data: result });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// 稼動率觀察：每季 COGS/營收/毛利率的結構變化，自動分類是報價/量增/成本哪種故事，只能用季資料（毛利只有季揭露）
+app.get('/api/stocks/:stockId/cost-structure', async (req, res) => {
+  try {
+    const quarters = Math.min(parseInt(req.query.quarters) || 8, 20);
+    const result = await analyzeCostStructure(req.params.stockId, quarters);
     res.json({ success: true, data: result });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
@@ -618,8 +630,9 @@ app.get('/api/stocks/:stockId/profile', async (req, res) => {
     const [hypotheses] = await pool.query('SELECT * FROM company_hypotheses WHERE stock_id = ? ORDER BY sort_order, id', [req.params.stockId]);
     const [events] = await pool.query('SELECT * FROM company_events WHERE stock_id = ? ORDER BY event_date DESC', [req.params.stockId]);
     const [verification] = await pool.query('SELECT * FROM company_verification_items WHERE stock_id = ? ORDER BY sort_order, id', [req.params.stockId]);
+    const [matrixCells] = await pool.query('SELECT * FROM industry_map_matrix_cells WHERE stock_id = ? ORDER BY id', [req.params.stockId]);
 
-    res.json({ success: true, data: { ...profile, causal_lines: causalLines, hypotheses, events, verification_items: verification } });
+    res.json({ success: true, data: { ...profile, causal_lines: causalLines, hypotheses, events, verification_items: verification, matrix_cells: matrixCells } });
   } catch (e) { res.status(500).json({ success: false, error: e.message }); }
 });
 
@@ -644,6 +657,7 @@ app.put('/api/stocks/:stockId/profile', async (req, res) => {
     const v1_judgment = pick('v1_judgment', null);
     const v1_reasoning = pick('v1_reasoning', null);
     const business_notes = pick('business_notes', null);
+    const metric_notes = pick('metric_notes', null);
     const open_gaps = pick('open_gaps', null);
     const is_coverage_active = pick('is_coverage_active', true);
 
@@ -651,19 +665,19 @@ app.put('/api/stocks/:stockId/profile', async (req, res) => {
       `INSERT INTO company_profiles
        (stock_id, industry_map_id, layer, moat_source, moat_level, key_structure_status,
         relationship_type, supplier_multiplicity, integration_risk_notes,
-        v1_judgment, v1_reasoning, business_notes, open_gaps, is_coverage_active)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+        v1_judgment, v1_reasoning, business_notes, metric_notes, open_gaps, is_coverage_active)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
        ON DUPLICATE KEY UPDATE
        industry_map_id=VALUES(industry_map_id), layer=VALUES(layer), moat_source=VALUES(moat_source),
        moat_level=VALUES(moat_level), key_structure_status=VALUES(key_structure_status),
        relationship_type=VALUES(relationship_type), supplier_multiplicity=VALUES(supplier_multiplicity),
        integration_risk_notes=VALUES(integration_risk_notes), v1_judgment=VALUES(v1_judgment),
-       v1_reasoning=VALUES(v1_reasoning), business_notes=VALUES(business_notes), open_gaps=VALUES(open_gaps),
-       is_coverage_active=VALUES(is_coverage_active)`,
+       v1_reasoning=VALUES(v1_reasoning), business_notes=VALUES(business_notes), metric_notes=VALUES(metric_notes),
+       open_gaps=VALUES(open_gaps), is_coverage_active=VALUES(is_coverage_active)`,
       [stockId, industry_map_id || null, layer || null, moat_source || null, moat_level || null,
        key_structure_status || null, relationship_type || null, supplier_multiplicity || null,
        integration_risk_notes || null, v1_judgment || null, v1_reasoning || null, business_notes || null,
-       open_gaps || null, !!is_coverage_active]
+       metric_notes || null, open_gaps || null, !!is_coverage_active]
     );
     res.json({ success: true });
   } catch (e) { res.status(500).json({ success: false, error: e.message }); }
@@ -721,12 +735,12 @@ app.get('/api/stocks/:stockId/hypotheses', async (req, res) => {
 
 app.post('/api/stocks/:stockId/hypotheses', async (req, res) => {
   try {
-    const { hypothesis, falsifying_observation, current_status, sort_order } = req.body;
+    const { hypothesis, falsifying_observation, current_status, category, sort_order } = req.body;
     if (!hypothesis) return res.status(400).json({ success: false, error: 'hypothesis required' });
     const [r] = await pool.query(
-      `INSERT INTO company_hypotheses (stock_id, hypothesis, falsifying_observation, current_status, sort_order)
-       VALUES (?,?,?,?,?)`,
-      [req.params.stockId, hypothesis, falsifying_observation || null, current_status || null, sort_order || 0]
+      `INSERT INTO company_hypotheses (stock_id, hypothesis, falsifying_observation, current_status, category, sort_order)
+       VALUES (?,?,?,?,?,?)`,
+      [req.params.stockId, hypothesis, falsifying_observation || null, current_status || null, category || null, sort_order || 0]
     );
     res.json({ success: true, id: r.insertId });
   } catch (e) { res.status(500).json({ success: false, error: e.message }); }
@@ -734,11 +748,18 @@ app.post('/api/stocks/:stockId/hypotheses', async (req, res) => {
 
 app.put('/api/stocks/:stockId/hypotheses/:hid', async (req, res) => {
   try {
-    const { hypothesis, falsifying_observation, current_status, sort_order } = req.body;
+    // 只覆寫這次請求裡真的有帶的欄位；category 沒帶的話沿用既有值，不能被編輯假設內容時順便清空
+    const [[existing]] = await pool.query('SELECT * FROM company_hypotheses WHERE id=? AND stock_id=?', [req.params.hid, req.params.stockId]);
+    const pick = (field, fallback) => req.body[field] !== undefined ? req.body[field] : (existing ? existing[field] : fallback);
+    const hypothesis = pick('hypothesis', null);
+    const falsifying_observation = pick('falsifying_observation', null);
+    const current_status = pick('current_status', null);
+    const category = pick('category', null);
+    const sort_order = pick('sort_order', 0);
     await pool.query(
-      `UPDATE company_hypotheses SET hypothesis=?, falsifying_observation=?, current_status=?, sort_order=?
+      `UPDATE company_hypotheses SET hypothesis=?, falsifying_observation=?, current_status=?, category=?, sort_order=?
        WHERE id=? AND stock_id=?`,
-      [hypothesis, falsifying_observation || null, current_status || null, sort_order || 0, req.params.hid, req.params.stockId]
+      [hypothesis, falsifying_observation || null, current_status || null, category || null, sort_order || 0, req.params.hid, req.params.stockId]
     );
     res.json({ success: true });
   } catch (e) { res.status(500).json({ success: false, error: e.message }); }
@@ -787,6 +808,38 @@ app.put('/api/stocks/:stockId/events/:eid', async (req, res) => {
 app.delete('/api/stocks/:stockId/events/:eid', async (req, res) => {
   try {
     await pool.query('DELETE FROM company_events WHERE id=? AND stock_id=?', [req.params.eid, req.params.stockId]);
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
+});
+
+// 產品線×應用（個股自己填，產業頁面「主題中性矩陣」是把所有覆蓋股票這裡的資料彙總成唯讀比較表，不在產業層級手動維護）
+app.post('/api/stocks/:stockId/matrix-cells', async (req, res) => {
+  try {
+    const { product_line, application, note } = req.body;
+    const [[profile]] = await pool.query('SELECT industry_map_id FROM company_profiles WHERE stock_id=?', [req.params.stockId]);
+    if (!profile) return res.status(404).json({ success: false, error: '尚未建立框架分類' });
+    const [r] = await pool.query(
+      `INSERT INTO industry_map_matrix_cells (industry_map_id, stock_id, product_line, application, note) VALUES (?,?,?,?,?)`,
+      [profile.industry_map_id, req.params.stockId, product_line || null, application || null, note || null]
+    );
+    res.json({ success: true, id: r.insertId });
+  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
+});
+
+app.put('/api/stocks/:stockId/matrix-cells/:cellId', async (req, res) => {
+  try {
+    const { product_line, application, note } = req.body;
+    await pool.query(
+      `UPDATE industry_map_matrix_cells SET product_line=?, application=?, note=? WHERE id=? AND stock_id=?`,
+      [product_line || null, application || null, note || null, req.params.cellId, req.params.stockId]
+    );
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
+});
+
+app.delete('/api/stocks/:stockId/matrix-cells/:cellId', async (req, res) => {
+  try {
+    await pool.query('DELETE FROM industry_map_matrix_cells WHERE id=? AND stock_id=?', [req.params.cellId, req.params.stockId]);
     res.json({ success: true });
   } catch (e) { res.status(500).json({ success: false, error: e.message }); }
 });
