@@ -36,6 +36,19 @@ body { background: var(--bg); color: var(--text); font-family: -apple-system, Bl
 .tab-btn { background:none; border:none; border-bottom:2px solid transparent; color:var(--muted); padding:9px 4px; margin-right:20px; font-size:13.5px; font-weight:600; cursor:pointer; }
 .tab-btn:hover { color:var(--text); }
 .tab-btn.active { color:var(--blue); border-bottom-color:var(--blue); }
+
+.range-btns { display:flex; gap:6px; margin:10px 0 4px; }
+.range-btn { background:var(--bg3); border:1px solid var(--border); color:var(--muted); border-radius:6px; padding:4px 10px; font-size:11.5px; cursor:pointer; }
+.range-btn:hover { border-color:var(--blue); color:var(--text); }
+.range-btn.active { background:rgba(88,166,255,0.15); border-color:var(--blue); color:var(--blue); font-weight:600; }
+
+.detail-fold { margin-top:10px; }
+.detail-fold summary { cursor:pointer; font-size:11.5px; color:var(--muted); padding:4px 0; list-style:none; }
+.detail-fold summary::-webkit-details-marker { display:none; }
+.detail-fold summary::before { content:'▸ '; }
+.detail-fold[open] summary::before { content:'▾ '; }
+.detail-fold summary:hover { color:var(--blue); }
+.detail-fold[open] summary { margin-bottom:8px; }
 .btn-toggle { background:var(--bg3); border:1px solid var(--border); color:var(--text); border-radius:6px; padding:6px 12px; font-size:12px; cursor:pointer; white-space:nowrap; }
 .btn-toggle:hover { border-color:var(--blue); }
 
@@ -79,6 +92,8 @@ table.rtable input { font-size:12px; padding:5px 7px; }
 .cd-row { display:grid; grid-template-columns:160px 1fr; gap:10px; margin-bottom:10px; align-items:start; }
 .cd-row .cd-label { font-size:11px; color:var(--muted); padding-top:6px; }
 .cd-section-title { font-size:11px; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:.06em; margin:16px 0 8px; padding-top:12px; border-top:1px solid var(--border); }
+.pos { color:var(--green); }
+.neg { color:var(--red); }
 table.rtable td.pos { color:var(--green); }
 table.rtable td.neg { color:var(--red); }
 table.rtable td.health-healthy { color:var(--green); }
@@ -113,6 +128,7 @@ table.rtable td.health-neutral { color:var(--muted); }
 .chart-block svg { width:100%; height:auto; display:block; overflow:visible; }
 .chart-mark { cursor:pointer; }
 .chart-mark:hover, .chart-mark:focus { filter:brightness(1.35); outline:none; }
+.chart-gridline { stroke:var(--border); stroke-width:1; }
 .chart-axis-label { fill:var(--muted); font-size:9.5px; }
 .chart-value-label { fill:var(--muted); font-size:10px; font-weight:600; }
 .chart-tip { position:fixed; background:var(--bg3); border:1px solid var(--border); border-radius:6px; padding:6px 10px; font-size:12px; pointer-events:none; z-index:1000; display:none; box-shadow:0 4px 14px rgba(0,0,0,.45); white-space:nowrap; }
@@ -176,6 +192,12 @@ const stockId = new URLSearchParams(location.search).get('id');
 let detail = null;
 let monthlyRevenue = null;
 let costData = null;
+let peBand = null;
+let peBandRangeYears = null; // null = 全部
+let pegData = null;
+let peerValuation = null;
+let scenariosData = null;
+let financialHealth = null;
 let viewMode = true;
 let activeTab = 'quant'; // 'quant' = 基本面量化指標, 'research' = 研究判斷
 
@@ -210,12 +232,22 @@ async function load() {
   detail.verification_items = detail.verification_items || [];
   detail.matrix_cells = detail.matrix_cells || [];
 
-  const [revRes, costRes] = await Promise.all([
+  const [revRes, costRes, peRes, pegRes, peerRes, scenRes, healthRes] = await Promise.all([
     fetch(`/api/stocks/${stockId}/revenue?months=12`).then(x => x.json()).catch(() => null),
     fetch(`/api/stocks/${stockId}/cost-structure?quarters=8`).then(x => x.json()).catch(() => null),
+    fetch(`/api/stocks/${stockId}/pe-band`).then(x => x.json()).catch(() => null),
+    fetch(`/api/stocks/${stockId}/peg`).then(x => x.json()).catch(() => null),
+    fetch(`/api/stocks/${stockId}/peer-valuation`).then(x => x.json()).catch(() => null),
+    fetch(`/api/stocks/${stockId}/scenarios`).then(x => x.json()).catch(() => null),
+    fetch(`/api/stocks/${stockId}/financial-health`).then(x => x.json()).catch(() => null),
   ]);
   monthlyRevenue = revRes?.success ? revRes.data : null;
   costData = costRes?.success ? costRes.data : null;
+  peBand = peRes?.success ? peRes.data : null;
+  pegData = pegRes?.success ? pegRes.data : null;
+  peerValuation = peerRes?.success ? peerRes.data : null;
+  scenariosData = scenRes?.success ? scenRes.data : null;
+  financialHealth = healthRes?.success ? healthRes.data : null;
 
   render();
 }
@@ -241,17 +273,20 @@ function registerMark(label, value, unit) {
 
 // points: [{label, value}]
 function renderLineChart(points, opts) {
-  const { unit = '', color = 'var(--blue)' } = opts;
+  const { unit = '', color = 'var(--blue)', refLines = [] } = opts;
   const W = 640, H = 130, padL = 6, padR = 30, padT = 20, padB = 20;
   const plotW = W - padL - padR, plotH = H - padT - padB;
   const vals = points.map(p => p.value).filter(v => v != null);
   if (!vals.length) return fieldValue(null);
-  let maxV = Math.max(...vals), minV = Math.min(...vals);
+  let maxV = Math.max(...vals, ...refLines.map(r => r.value)), minV = Math.min(...vals, ...refLines.map(r => r.value));
   if (maxV === minV) { maxV += 1; minV -= 1; }
   const pad = (maxV - minV) * 0.15;
   maxV += pad; minV -= pad;
   const range = maxV - minV;
   const n = points.length;
+  // 點很多時(例如月頻率的歷史序列)每個點都標軸線文字會擠成一團，只挑幾個間隔標
+  const labelEvery = opts.labelEvery || Math.max(1, Math.ceil(n / 10));
+  const markRadius = n > 20 ? 3 : 5;
   const scaleX = i => padL + (n === 1 ? plotW / 2 : plotW * i / (n - 1));
   const scaleY = v => padT + plotH * (maxV - v) / range;
 
@@ -259,17 +294,22 @@ function renderLineChart(points, opts) {
   const linePts = coords.filter(c => c.y != null).map(c => `${c.x},${c.y}`).join(' ');
 
   let marks = '', labels = '';
+  const refs = refLines.map(r => `<line class="chart-gridline" x1="${padL}" y1="${scaleY(r.value)}" x2="${W - padR}" y2="${scaleY(r.value)}" stroke-dasharray="3,3"></line>
+    <text class="chart-axis-label" x="${W - padR + 4}" y="${scaleY(r.value) + 3}" text-anchor="start">${esc(r.label)}</text>`).join('');
   coords.forEach((c, i) => {
-    labels += `<text class="chart-axis-label" x="${c.x}" y="${H - 4}" text-anchor="middle">${esc(c.label)}</text>`;
+    if (i % labelEvery === 0 || i === n - 1) {
+      labels += `<text class="chart-axis-label" x="${c.x}" y="${H - 4}" text-anchor="middle">${esc(c.label)}</text>`;
+    }
     if (c.y == null) return;
     const id = registerMark(c.label, c.value, unit);
-    marks += `<circle class="chart-mark" tabindex="0" data-mark="${id}" cx="${c.x}" cy="${c.y}" r="5" fill="${color}" stroke="var(--bg2)" stroke-width="2"></circle>`;
+    marks += `<circle class="chart-mark" tabindex="0" data-mark="${id}" cx="${c.x}" cy="${c.y}" r="${markRadius}" fill="${color}" stroke="var(--bg2)" stroke-width="${markRadius > 3 ? 2 : 1}"></circle>`;
     if (i === n - 1) {
       marks += `<text class="chart-value-label" x="${c.x + 8}" y="${c.y + 4}" text-anchor="start">${fmtChartVal(c.value, unit)}</text>`;
     }
   });
 
   return `<div class="chart-block"><svg viewBox="0 0 ${W} ${H}">
+    ${refs}
     <polyline points="${linePts}" fill="none" stroke="${color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"></polyline>
     ${marks}${labels}
   </svg></div>`;
@@ -376,6 +416,237 @@ function marginChart() {
   if (!costData?.length) return fieldValue(null);
   const points = costData.map(r => ({ label: `${r.year}Q${r.quarter}`, value: r.gross_margin }));
   return renderLineChart(points, { unit: '%', color: 'var(--blue)' });
+}
+
+/* ─── 本益比河流圖 ─── */
+// 河流圖右上角的時間範圍切換：只改圖表/表格顯示的範圍，不影響歷史高/中位數/低點/百分位這些統計——
+// 那些統計代表的是「完整歷史區間」，縮小顯示範圍不該跟著改變「這是不是相對便宜」的結論
+function peBandFilteredSeries() {
+  if (!peBand?.series) return [];
+  if (!peBandRangeYears) return peBand.series;
+  const cutoff = new Date();
+  cutoff.setFullYear(cutoff.getFullYear() - peBandRangeYears);
+  const cutoffStr = cutoff.toISOString().slice(0, 10);
+  return peBand.series.filter(s => s.date >= cutoffStr);
+}
+function setPeBandRange(years) { peBandRangeYears = years; render(); }
+function peRangeButtons() {
+  const opts = [[1, '近1年'], [3, '近3年'], [5, '近5年'], [null, '全部']];
+  return `<div class="range-btns">${opts.map(([y, label]) =>
+    `<button class="range-btn ${peBandRangeYears === y ? 'active' : ''}" onclick="setPeBandRange(${y})">${label}</button>`
+  ).join('')}</div>`;
+}
+function peChart() {
+  const filtered = peBandFilteredSeries();
+  if (!filtered.length) return fieldValue(null);
+  const points = filtered.map(s => ({ label: s.date.slice(0, 7), value: s.pe }));
+  const { min, median, max } = peBand.stats;
+  return renderLineChart(points, {
+    unit: 'x', color: 'var(--blue)',
+    refLines: [
+      { value: max, label: `歷史高 ${max}x` },
+      { value: median, label: `歷史中位數 ${median}x` },
+      { value: min, label: `歷史低 ${min}x` },
+    ],
+  });
+}
+function peDetailTable() {
+  const filtered = [...peBandFilteredSeries()].reverse(); // 最新在最上面
+  if (!filtered.length) return fieldValue(null);
+  return `<table class="rtable">
+    <tr><th>月份</th><th>收盤價</th><th>TTM EPS組成(近4季)</th><th>TTM EPS加總</th><th>PE</th></tr>
+    ${filtered.map(s => `<tr>
+      <td>${esc(s.date.slice(0, 7))}</td>
+      <td>${s.price}</td>
+      <td style="font-size:11.5px;color:var(--muted);white-space:nowrap;">${s.quarters.map(q => `${q.year}Q${q.quarter}:${q.eps}`).join(' + ')}</td>
+      <td>${s.ttm_eps}</td>
+      <td>${s.pe}x</td>
+    </tr>`).join('')}
+  </table>`;
+}
+function peCard() {
+  if (!peBand) {
+    return `<div class="card">
+      <div class="card-title">本益比河流圖</div>
+      <div style="color:var(--muted);font-size:12px;">歷史財報或股價資料不夠(至少要4季EPS)，暫時算不出來</div>
+    </div>`;
+  }
+  const { min, median, max, current, percentile, count } = peBand.stats;
+  return `
+    <div class="card">
+      <div class="card-title">本益比河流圖 <span class="hint">現在的PE落在自己歷史區間的哪個位置，不是看絕對值高低；PE = 股價 ÷ TTM EPS(近4季加總)</span></div>
+      <div class="provisional-badge">
+        <span class="tag">目前</span>
+        <span class="label">PE ${current}x，落在近${count}個月歷史區間的第 ${percentile} 百分位</span>
+        <span class="caveat">歷史區間(全部)：${min}x ~ ${max}x，中位數 ${median}x</span>
+      </div>
+      ${peRangeButtons()}
+      ${peChart()}
+      <details class="detail-fold">
+        <summary>計算明細——列出每個月的PE實際是用哪4季EPS加總算出來的，方便自己核對</summary>
+        <div class="table-scroll">${peDetailTable()}</div>
+      </details>
+      <div style="color:var(--muted);font-size:11.5px;margin-top:8px;">用「市場當時已知的TTM EPS」對每月底股價算歷史PE，避免拿還沒公佈的未來財報回推——所以這裡的「目前PE」可能跟估值頁面的簡易PE數字不完全一樣，這裡故意保守一天算一天，等財報法定截止日過了才算數。</div>
+    </div>`;
+}
+
+/* ─── PEG + 同業比較：PE本身看不出貴不貴，這裡用兩個角度校正 ─── */
+function pegInterpret(peg, growth) {
+  if (growth == null || growth <= 0) return { tone: '', text: 'EPS成長率為負或轉虧，PEG沒有意義' };
+  if (peg == null) return { tone: '', text: '資料不足，算不出PEG' };
+  if (peg < 0.8) return { tone: 'pos', text: `PEG明顯小於1，成長速度可能比目前PE反映得更快——但務必先確認這個成長率是不是可持續，不是單季反彈（對照上面「稼動率觀察」的健康判讀）` };
+  if (peg > 1.2) return { tone: 'neg', text: 'PEG明顯大於1，用成長速度校正後，PE可能偏貴' };
+  return { tone: '', text: 'PEG接近1，市場給的PE大致跟得上成長速度' };
+}
+function pegSection() {
+  if (!pegData) return `<div style="color:var(--muted);font-size:12px;">歷史EPS不夠8季，算不出PEG</div>`;
+  const { pe_ratio, eps_growth_pct, peg, ttm_eps, ttm_eps_year_ago, quarters_now, quarters_year_ago } = pegData;
+  const interp = pegInterpret(peg, eps_growth_pct);
+  const fmtQ = qs => [...qs].reverse().map(q => `${q.year}Q${q.quarter}:${q.eps}`).join(' + ');
+  return `
+    <div class="provisional-badge">
+      <span class="tag">PEG</span>
+      <span class="label ${interp.tone}">PE ${pe_ratio}x ÷ EPS成長率(TTM對TTM) ${eps_growth_pct >= 0 ? '+' : ''}${eps_growth_pct}% = ${peg != null ? peg : '—'}</span>
+    </div>
+    <div style="color:var(--muted);font-size:12px;margin:6px 0;">${esc(interp.text)}</div>
+    <details class="detail-fold">
+      <summary>計算明細——PE跟成長率是怎麼算出來的</summary>
+      <table class="rtable">
+        <tr><th>TTM窗口</th><th>組成(近4季)</th><th>加總</th></tr>
+        <tr><td>現在</td><td style="font-size:11.5px;color:var(--muted);white-space:nowrap;">${fmtQ(quarters_now)}</td><td>${ttm_eps}</td></tr>
+        <tr><td>一年前</td><td style="font-size:11.5px;color:var(--muted);white-space:nowrap;">${fmtQ(quarters_year_ago)}</td><td>${ttm_eps_year_ago}</td></tr>
+      </table>
+    </details>`;
+}
+function peerSection() {
+  if (!peerValuation) return `<div style="color:var(--muted);font-size:12px;">同產業覆蓋股票不足兩檔，沒有同業可以比</div>`;
+  const { peers, median, average, peg_median, peg_average } = peerValuation;
+  return `<table class="rtable">
+    <tr><th>股號</th><th>公司</th><th>PE</th><th>EPS成長率(TTM)</th><th>PEG</th></tr>
+    ${peers.map(p => `<tr ${p.stock_id === stockId ? 'style="color:var(--blue);font-weight:600;"' : ''}>
+      <td>${esc(p.stock_id)}</td><td>${esc(p.stock_name)}${p.stock_id === stockId ? '（本檔）' : ''}</td>
+      <td>${p.pe_ratio}x</td>
+      <td>${p.eps_growth_pct != null ? (p.eps_growth_pct >= 0 ? '+' : '') + p.eps_growth_pct + '%' : '—'}</td>
+      <td>${p.peg != null ? p.peg : '—'}</td>
+    </tr>`).join('')}
+  </table>
+  <div style="color:var(--muted);font-size:11.5px;margin-top:8px;">PE中位數 ${median}x(平均${average}x)；PEG中位數 ${peg_median ?? '—'}(平均${peg_average ?? '—'})——PE最低不代表PEG最低，PE要拿去除成長率之後排序才會反過來，這就是PEG存在的意義。</div>`;
+}
+function valuationCompareCard() {
+  return `
+    <div class="card">
+      <div class="card-title">估值比較 <span class="hint">同一個PE，換個角度看貴不貴</span></div>
+      <div class="cd-section-title" style="margin-top:0;padding-top:0;border-top:none;">PEG（本益成長比）</div>
+      ${pegSection()}
+      <div class="cd-section-title">同業比較</div>
+      ${peerSection()}
+    </div>`;
+}
+
+/* ─── 情境推估：不是預測，是用這檔股票自己歷史上真實發生過的營收/COGS落差，套在一個營收假設上 ─── */
+async function recalcScenarios() {
+  const val = document.getElementById('f_revenue_qoq').value;
+  const revenueQoq = val === '' ? '' : parseFloat(val);
+  const url = revenueQoq === '' || isNaN(revenueQoq)
+    ? `/api/stocks/${stockId}/scenarios`
+    : `/api/stocks/${stockId}/scenarios?revenue_qoq=${revenueQoq}`;
+  const r = await fetch(url).then(x => x.json()).catch(() => null);
+  scenariosData = r?.success ? r.data : null;
+  render();
+}
+function scenariosCard() {
+  if (!scenariosData) {
+    return `<div class="card">
+      <div class="card-title">情境推估</div>
+      <div style="color:var(--muted);font-size:12px;">歷史資料不夠(至少要4組季度QoQ)，暫時算不出來</div>
+    </div>`;
+  }
+  const { latest_period, latest_gross_margin, revenue_qoq_assumed, revenue_qoq_is_default, scenarios } = scenariosData;
+  return `
+    <div class="card">
+      <div class="card-title">情境推估 <span class="hint">不是預測下一季實際數字，是用這檔股票自己歷史上真實發生過的營收/成本落差，套在同一個營收假設上，看毛利率的可能範圍</span></div>
+      <div class="cd-row" style="margin-bottom:14px;">
+        <div class="cd-label">下一季營收假設(QoQ%)</div>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <input type="text" id="f_revenue_qoq" value="${revenue_qoq_assumed}" style="width:100px;">
+          <button class="btn-save small" onclick="recalcScenarios()">重新計算</button>
+          <span style="color:var(--muted);font-size:11px;">${revenue_qoq_is_default ? `預設沿用最新一季(${esc(latest_period)})自己的QoQ，可以改成你聽到的消息判斷後自己的假設` : '自訂假設'}</span>
+        </div>
+      </div>
+      <table class="rtable">
+        <tr><th>情境</th><th>依據季度</th><th>營收QoQ假設</th><th>營業成本QoQ(推算)</th><th>毛利率</th><th>EPS(粗估)</th></tr>
+        ${scenarios.map(s => `<tr>
+          <td>${esc(s.label)}</td>
+          <td style="color:var(--muted);font-size:11.5px;">${esc(s.based_on)}的落差</td>
+          <td>${s.revenue_qoq >= 0 ? '+' : ''}${s.revenue_qoq}%</td>
+          <td>${s.cogs_qoq >= 0 ? '+' : ''}${s.cogs_qoq}%</td>
+          <td>${s.gross_margin_next}%</td>
+          <td>${s.eps_next != null ? s.eps_next : '—'}</td>
+        </tr>`).join('')}
+      </table>
+      <div style="color:var(--muted);font-size:11.5px;margin-top:8px;">目前(${esc(latest_period)})毛利率 ${latest_gross_margin}%，三個情境的差別只在於「營業成本會不會跟著營收一起漲」，這個假設分別對應到這檔股票自己歷史上最有利/中位數/最不利的一次落差，不是憑空編的數字。<b>EPS欄位精確度遠低於毛利率</b>——只是把毛利率情境用「最新一季毛利轉換成EPS的比例」等比例縮放，沒有重新拆解營業費用、稅率、業外損益，只能當粗略參考，不能當成預測。</div>
+    </div>`;
+}
+
+/* ─── 財務體質：資產負債表/獲利效率，稼動率觀察那條線完全沒碰過的東西 ─── */
+function fmtOrDash(v) {
+  return v != null ? v : '—';
+}
+function trendArrow(v) {
+  if (v == null) return '';
+  if (Math.abs(v) < 0.01) return '';
+  return v > 0 ? ' <span class="pos">▲</span>' : ' <span class="neg">▼</span>';
+}
+function healthPill(key, value, thresholds) {
+  const t = thresholds[key];
+  if (!t || value == null) return '';
+  const level = t.reverse ? (value <= t.good ? 'healthy' : value <= t.ok ? 'neutral' : 'unhealthy')
+    : (value >= t.good ? 'healthy' : value >= t.ok ? 'neutral' : 'unhealthy');
+  return ` <span class="health-${level}" style="font-size:11px;">(${HEALTH_LABEL[level]})</span>`;
+}
+function financialHealthCard() {
+  if (!financialHealth) {
+    return `<div class="card">
+      <div class="card-title">財務體質</div>
+      <div style="color:var(--muted);font-size:12px;">財報資料不夠，暫時算不出來</div>
+    </div>`;
+  }
+  const { series, latest, trend, thresholds } = financialHealth;
+  const rows = [...series].reverse();
+  const currentRatioNote = latest.current_ratio >= 200 ? '流動比率寬鬆(≥200%)'
+    : latest.current_ratio >= 100 ? '流動比率健康(100~200%)，短期償債能力沒問題' : '流動比率低於100%，短期償債能力要留意';
+  return `
+    <div class="card">
+      <div class="card-title">財務體質 <span class="hint">負債比/流動比率/ROE/ROA/營業利益率/淨利率——稼動率觀察那條線只看毛利率，這裡補資產負債表跟獲利效率。ROE/ROA是近4季加總後年化的數字，不是單季，才能跟「ROE 15%算優異」這種常見門檻對得起來</span></div>
+      <div class="provisional-badge">
+        <span class="tag">${esc(latest.period)}</span>
+        <span class="label">ROE(年化) ${fmtOrDash(latest.ttm_roe)}%${healthPill('roe', latest.ttm_roe, thresholds)}${trendArrow(trend.ttm_roe)}　流動比率 ${latest.current_ratio}%${healthPill('current_ratio', latest.current_ratio, thresholds)}${trendArrow(trend.current_ratio)}　負債比率 ${latest.debt_ratio}%${healthPill('debt_ratio', latest.debt_ratio, thresholds)}${trendArrow(-trend.debt_ratio)}</span>
+        <span class="caveat">${esc(currentRatioNote)}</span>
+      </div>
+      <details class="detail-fold">
+        <summary>近${series.length}季明細</summary>
+        <div class="table-scroll"><table class="rtable">
+          <tr>
+            <th>季度</th>
+            ${thTip('ROE(年化)', thresholds.roe.note)}
+            ${thTip('ROA(年化)', thresholds.roa.note)}
+            <th>營業利益率</th><th>淨利率</th>
+            ${thTip('流動比率', thresholds.current_ratio.note)}
+            ${thTip('負債比率', thresholds.debt_ratio.note)}
+          </tr>
+          ${rows.map(r => `<tr>
+            <td>${esc(r.period)}</td>
+            <td>${fmtOrDash(r.ttm_roe)}${r.ttm_roe != null ? '%' : ''}${healthPill('roe', r.ttm_roe, thresholds)}</td>
+            <td>${fmtOrDash(r.ttm_roa)}${r.ttm_roa != null ? '%' : ''}${healthPill('roa', r.ttm_roa, thresholds)}</td>
+            <td>${r.operating_margin != null ? r.operating_margin + '%' : '—'}</td>
+            <td>${r.net_margin != null ? r.net_margin + '%' : '—'}</td>
+            <td>${r.current_ratio != null ? r.current_ratio + '%' : '—'}${healthPill('current_ratio', r.current_ratio, thresholds)}</td>
+            <td>${r.debt_ratio != null ? r.debt_ratio + '%' : '—'}${healthPill('debt_ratio', r.debt_ratio, thresholds)}</td>
+          </tr>`).join('')}
+        </table></div>
+      </details>
+      <div style="color:var(--muted);font-size:11.5px;margin-top:8px;">ROE/ROA看賺錢效率(近4季淨利加總÷最新一季期末權益/資產，年化後才能跟常見門檻比)；營業利益率/淨利率沒有普適門檻，重點是看跟毛利率的差距是否穩定(差距=被營業費用/業外損益吃掉多少)；流動比率看短期償債能力；負債比率看財務槓桿，資本密集產業天生偏高不代表異常，重點是趨勢有沒有持續往上衝。健康度標記是常見經驗法則，不是鐵律，景氣循環股本身波動大，看趨勢比看單一數字重要。</div>
+    </div>`;
 }
 
 // COGS 是季頻率、比月營收慢一整季確認——這裡先用近3個月月營收MoM的持續性做一個「早期觀察」，
@@ -735,8 +1006,8 @@ function eventsRead(d) {
 function switchTab(tab) { activeTab = tab; render(); }
 
 function quantTabContent() {
-  return costCard();
-  // 之後陸續加入的基本面量化指標(例如本益比估值)也放在這個function裡，同一個分頁
+  return costCard() + peCard() + valuationCompareCard() + scenariosCard() + financialHealthCard();
+  // 之後陸續加入的基本面量化指標也接在這個function裡，同一個分頁
 }
 
 function researchTabContent(d) {

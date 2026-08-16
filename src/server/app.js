@@ -252,7 +252,7 @@ async function autoImportFrameworkIfEmpty() {
   }
 }
 
-const { analyzeRevenueTrend, calculateValuation, getFinancialSummary, analyzeCostStructure } = require('../analysis/fundamentalAnalysis');
+const { analyzeRevenueTrend, calculateValuation, getFinancialSummary, analyzeCostStructure, analyzePEBand, analyzePEG, analyzePeerValuation, analyzeScenarios, getFinancialHealth } = require('../analysis/fundamentalAnalysis');
 const { getPriceFreshness, getRevenueFreshness, getFinancialFreshness } = require('../utils/dataFreshness');
 const { runDailySync } = require('../crawler/dailySync');
 const { getNextQuarterDeadline } = require('../crawler/fetchFinancialStatements');
@@ -388,6 +388,58 @@ app.get('/api/stocks/:stockId/cost-structure', async (req, res) => {
   try {
     const quarters = Math.min(parseInt(req.query.quarters) || 8, 20);
     const result = await analyzeCostStructure(req.params.stockId, quarters);
+    res.json({ success: true, data: result });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// 本益比河流圖：現在的PE落在自己歷史區間的哪個位置
+app.get('/api/stocks/:stockId/pe-band', async (req, res) => {
+  try {
+    const result = await analyzePEBand(req.params.stockId);
+    res.json({ success: true, data: result });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// PEG：PE ÷ EPS成長率(TTM對比一年前TTM)
+app.get('/api/stocks/:stockId/peg', async (req, res) => {
+  try {
+    const result = await analyzePEG(req.params.stockId);
+    res.json({ success: true, data: result });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// 財務體質：負債比/流動比率/ROE/ROA/營業利益率/淨利率，financial_ratios早就算好，這裡只是端出來
+app.get('/api/stocks/:stockId/financial-health', async (req, res) => {
+  try {
+    const quarters = Math.min(parseInt(req.query.quarters) || 8, 20);
+    const result = await getFinancialHealth(req.params.stockId, quarters);
+    res.json({ success: true, data: result });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// 情境推估：用這檔股票自己歷史上的營收/COGS落差當樂觀/中性/保守三種情境，不假裝預測未來實際數字
+app.get('/api/stocks/:stockId/scenarios', async (req, res) => {
+  try {
+    const revenueQoq = req.query.revenue_qoq != null ? parseFloat(req.query.revenue_qoq) : null;
+    const result = await analyzeScenarios(req.params.stockId, revenueQoq);
+    res.json({ success: true, data: result });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// 同業比較：同一產業地圖下所有覆蓋股票的PE中位數/平均，看這檔股票貴不貴
+app.get('/api/stocks/:stockId/peer-valuation', async (req, res) => {
+  try {
+    const result = await analyzePeerValuation(req.params.stockId);
     res.json({ success: true, data: result });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });

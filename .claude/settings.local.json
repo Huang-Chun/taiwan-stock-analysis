@@ -70,7 +70,9 @@
       "mcp__taiwan-stock__sync_stock_list",
       "mcp__taiwan-stock__sync_dividends",
       "Bash(git add:*)",
-      "Bash(C:\\\\Program Files\\\\MySQL\\\\MySQL Server 8.0\\\\bin\\\\mysql.exe:*)"
+      "Bash(C:\\\\Program Files\\\\MySQL\\\\MySQL Server 8.0\\\\bin\\\\mysql.exe:*)",
+      "WebFetch(domain:finmindtrade.com)",
+      "Artifact"
     ]
   },
   "enableAllProjectMcpServers": true,
