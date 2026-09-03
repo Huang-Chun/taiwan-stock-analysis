@@ -257,6 +257,7 @@ const { getPriceFreshness, getRevenueFreshness, getFinancialFreshness } = requir
 const { runDailySync } = require('../crawler/dailySync');
 const { getNextQuarterDeadline } = require('../crawler/fetchFinancialStatements');
 const { getNextRevenueDeadline } = require('../crawler/fetchMonthlyRevenue');
+const { syncMacroIndicators } = require('../crawler/fetchMacroIndicators');
 const cron = require('node-cron');
 
 const app = express();
@@ -1210,6 +1211,106 @@ app.post('/api/admin/daily-sync', async (req, res) => {
   try {
     const result = await runDailySync();
     res.json({ success: true, ...result });
+  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
+});
+
+// ============================================
+// 總經分析框架 API
+// 四大總經維度 / 三層優先級 / 公布行事曆 / 傳導機制 / 判讀原則
+// ============================================
+
+// 指標列表：join 各指標最新一期數值/公布日
+app.get('/api/macro/indicators', async (req, res) => {
+  try {
+    const [rows] = await pool.query(
+      `SELECT mi.id, mi.name, mi.country, mi.dimension, mi.priority_tier,
+              mi.frequency, mi.release_timing, mi.publisher, mi.interpretation_notes,
+              mi.fred_series_id, mi.sort_order,
+              r.period AS latest_period, r.value AS latest_value, r.unit AS latest_unit,
+              r.expected_date, r.actual_release_date, r.source AS latest_source, r.notes AS latest_notes
+       FROM macro_indicators mi
+       LEFT JOIN (
+         SELECT rel.* FROM macro_indicator_releases rel
+         INNER JOIN (
+           SELECT indicator_id, MAX(period) AS max_period FROM macro_indicator_releases GROUP BY indicator_id
+         ) latest ON rel.indicator_id = latest.indicator_id AND rel.period = latest.max_period
+       ) r ON r.indicator_id = mi.id
+       ORDER BY mi.sort_order, mi.id`
+    );
+    res.json({ success: true, data: rows });
+  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
+});
+
+// 單一指標詳情：歷史數值 + 相關傳導機制範例
+app.get('/api/macro/indicators/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const [[indicator]] = await pool.query('SELECT * FROM macro_indicators WHERE id = ?', [id]);
+    if (!indicator) return res.status(404).json({ success: false, error: '指標不存在' });
+
+    const [releases] = await pool.query(
+      'SELECT * FROM macro_indicator_releases WHERE indicator_id = ? ORDER BY period DESC LIMIT 24', [id]
+    );
+    const [transmissionNotes] = await pool.query(
+      'SELECT * FROM macro_transmission_notes WHERE indicator_id = ? ORDER BY sort_order', [id]
+    );
+    res.json({ success: true, data: { ...indicator, releases, transmission_notes: transmissionNotes } });
+  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
+});
+
+// 手動輸入/覆蓋某指標某一期的數值與公布日（台灣指標主要靠這個維護）
+app.post('/api/macro/indicators/:id/releases', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { period, value, expected_date, actual_release_date, notes } = req.body || {};
+    if (!period) return res.status(400).json({ success: false, error: '缺少 period' });
+
+    const [[indicator]] = await pool.query('SELECT id FROM macro_indicators WHERE id = ?', [id]);
+    if (!indicator) return res.status(404).json({ success: false, error: '指標不存在' });
+
+    await pool.query(
+      `INSERT INTO macro_indicator_releases (indicator_id, period, value, expected_date, actual_release_date, source, notes)
+       VALUES (?,?,?,?,?, 'manual', ?)
+       ON DUPLICATE KEY UPDATE
+       value = VALUES(value), expected_date = VALUES(expected_date),
+       actual_release_date = VALUES(actual_release_date), source = 'manual', notes = VALUES(notes)`,
+      [id, period, value ?? null, expected_date || null, actual_release_date || null, notes || null]
+    );
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
+});
+
+// 傳導機制範例 / 分析原則 / 框架說明（靜態參考內容）
+app.get('/api/macro/transmission-notes', async (req, res) => {
+  try {
+    const [rows] = await pool.query(
+      `SELECT tn.*, mi.name AS indicator_name FROM macro_transmission_notes tn
+       LEFT JOIN macro_indicators mi ON tn.indicator_id = mi.id
+       ORDER BY tn.sort_order`
+    );
+    res.json({ success: true, data: rows });
+  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
+});
+
+app.get('/api/macro/principles', async (req, res) => {
+  try {
+    const [rows] = await pool.query('SELECT * FROM macro_analysis_principles ORDER BY sort_order');
+    res.json({ success: true, data: rows });
+  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
+});
+
+app.get('/api/macro/notes', async (req, res) => {
+  try {
+    const [rows] = await pool.query('SELECT * FROM macro_framework_notes ORDER BY sort_order');
+    res.json({ success: true, data: rows });
+  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
+});
+
+// 手動觸發 FRED 同步（跟每日排程呼叫同一個函式；缺 FRED_API_KEY 時每個指標各自失敗，updated 會是 0）
+app.post('/api/macro/sync', async (req, res) => {
+  try {
+    const updated = await syncMacroIndicators();
+    res.json({ success: true, updated });
   } catch (e) { res.status(500).json({ success: false, error: e.message }); }
 });
 

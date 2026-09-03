@@ -11,7 +11,8 @@
     "fetch-revenue": "node src/crawler/fetchMonthlyRevenue.js",
     "fetch-financial": "node src/crawler/fetchFinancialStatements.js",
     "server": "node src/server/app.js",
-    "mcp": "node src/mcp/server.js"
+    "mcp": "node src/mcp/server.js",
+    "seed-macro-framework": "node scripts/seedMacroFramework.js"
   },
   "keywords": [
     "taiwan",

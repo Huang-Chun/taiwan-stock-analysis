@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>總經指標 - 台股供應鏈研究系統</title>
+<style>
+:root {
+  --bg: #0d1117; --bg2: #161b22; --bg3: #21262d;
+  --border: #30363d; --text: #e6edf3; --muted: #8b949e;
+  --green: #3fb950; --red: #f85149; --yellow: #e3b341; --orange: #f0883e;
+  --blue: #58a6ff; --purple: #bc8cff; --radius: 8px;
+}
+*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Microsoft JhengHei', sans-serif; font-size: 14px; }
+
+.topbar { display:flex; align-items:center; gap:16px; padding:10px 20px; background:var(--bg2); border-bottom:1px solid var(--border); position:sticky; top:0; z-index:100; }
+.topbar a { color:var(--blue); text-decoration:none; font-size:13px; font-weight:600; }
+.topbar .title { font-weight:700; font-size:15px; }
+.topbar nav { margin-left:auto; display:flex; gap:14px; align-items:center; }
+.topbar nav a { color:var(--muted); font-weight:400; }
+.topbar nav a:hover { color:var(--text); }
+
+.page { max-width:1180px; margin:0 auto; padding:28px 24px 80px; }
+
+.btn-sync { background:var(--blue); border:none; color:#fff; border-radius:6px; padding:7px 16px; font-size:13px; cursor:pointer; font-weight:600; }
+.btn-sync:hover { opacity:.9; }
+.btn-sync:disabled { opacity:.5; cursor:not-allowed; }
+
+.section { margin-bottom:28px; }
+.section-title { font-size:13px; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:.06em; margin-bottom:12px; display:flex; align-items:center; gap:10px; }
+.section-title .hint { font-weight:400; text-transform:none; letter-spacing:0; color:#5a6a7a; font-size:11px; }
+
+/* 指標依優先層級分區塊，每個指標一列（bar），notes 收在列下方，減少標籤數量 */
+.tier-block { margin-bottom:22px; }
+.tier-heading { display:inline-flex; align-items:center; gap:6px; font-size:12.5px; font-weight:700; padding:4px 12px; border-radius:6px; margin-bottom:10px; }
+.tier-heading .count { font-weight:400; opacity:.75; }
+.tier-heading.tier-核心必追 { background:rgba(248,81,73,0.15); color:var(--red); }
+.tier-heading.tier-重要 { background:rgba(227,179,65,0.15); color:var(--yellow); }
+.tier-heading.tier-參考即可 { background:var(--bg3); color:var(--muted); }
+.tier-heading.tier-未分類 { background:var(--bg3); color:#5a6a7a; }
+
+.indicator-item { background:var(--bg2); border:1px solid var(--border); border-radius:8px; margin-bottom:8px; overflow:hidden; }
+.indicator-row { display:flex; align-items:center; gap:16px; padding:10px 14px; flex-wrap:wrap; }
+.indicator-row .row-main { flex:1 1 220px; min-width:0; display:flex; align-items:baseline; gap:8px; flex-wrap:wrap; }
+.indicator-row .flag { font-size:10px; font-weight:700; padding:1px 5px; border-radius:4px; letter-spacing:.02em; }
+.indicator-row .flag.us { background:rgba(88,166,255,0.15); color:var(--blue); }
+.indicator-row .flag.tw { background:rgba(63,185,80,0.15); color:var(--green); }
+.indicator-row .ind-name { font-weight:700; font-size:13.5px; white-space:nowrap; }
+.indicator-row .ind-dim { color:var(--muted); font-size:11.5px; }
+.indicator-row .ind-fred { color:var(--green); font-size:12px; }
+
+.indicator-row .row-value { flex:0 0 auto; min-width:100px; text-align:right; }
+.indicator-row .row-value .value { font-weight:700; font-size:14px; }
+.indicator-row .row-value .period { color:var(--muted); font-size:11px; display:block; }
+
+.indicator-row .row-next { flex:0 0 auto; min-width:170px; }
+
+.btn-manual { flex-shrink:0; background:none; border:1px solid var(--border); color:var(--muted); border-radius:6px; width:26px; height:26px; font-size:12px; cursor:pointer; }
+.btn-manual:hover { color:var(--text); border-color:var(--muted); }
+
+.row-notes { color:var(--muted); font-size:12px; line-height:1.6; padding:0 14px 10px; border-top:1px solid var(--border); padding-top:8px; }
+.row-notes .meta { color:#5a6a7a; font-size:11px; margin-top:4px; }
+
+.dot { display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:5px; vertical-align:middle; flex-shrink:0; }
+.dot.urgent { background:var(--red); }
+.dot.official { background:var(--orange); }
+.dot.soon { background:var(--yellow); }
+.next-date { display:flex; align-items:baseline; gap:4px; flex-wrap:wrap; }
+.next-date .days { color:var(--muted); font-size:11px; }
+.next-date.urgent .days { color:var(--red); font-weight:600; }
+.next-date.official .days { color:var(--orange); font-weight:600; }
+.next-date.soon .days { color:var(--yellow); font-weight:600; }
+.muted-line { color:var(--muted); font-size:11.5px; }
+.mtag-none { color:#3a4552; font-size:11px; }
+
+.ref-card { background:var(--bg2); border:1px solid var(--border); border-radius:var(--radius); padding:14px 16px; margin-bottom:10px; }
+.ref-card .ref-title { font-weight:700; font-size:13px; margin-bottom:6px; }
+.ref-card .ref-body { color:var(--muted); font-size:12.5px; line-height:1.7; white-space:pre-line; }
+.ref-card .ref-tag { display:inline-block; font-size:10.5px; padding:1px 7px; border-radius:8px; background:rgba(88,166,255,0.15); color:var(--blue); margin-bottom:6px; }
+
+.empty { color:var(--muted); padding:20px; text-align:center; font-size:13px; }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <a href="/">← 台股供應鏈研究系統</a>
+  <span class="title">總經指標</span>
+  <nav>
+    <a href="/dashboard.html">觀察總覽</a>
+    <a href="/sectors.html">產業分類</a>
+    <a href="/api.html">API</a>
+    <button class="btn-sync" id="syncBtn" onclick="triggerSync()">↻ 同步 FRED 指標</button>
+  </nav>
+</div>
+
+<div class="page">
+  <div class="section">
+    <div class="section-title">追蹤節奏 <span class="hint">來自總經分析框架</span></div>
+    <div id="frameworkNotes"></div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">指標 <span class="hint">⚡=每晚自動同步(FRED)，其餘需手動更新 · 紅點=3天內公布 橘點=FRED官方行事曆 黃點=4-14天內</span></div>
+    <div id="indicatorSections"></div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">傳導機制範例</div>
+    <div id="transmissionNotes"></div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">關鍵分析原則 <span class="hint">可證偽的判讀邏輯</span></div>
+    <div id="principles"></div>
+  </div>
+</div>
+
+<script>
+function esc(s) { return (s ?? '').toString().replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+// 倒數急迫度：跟 dashboard.html 用同一套邏輯；FRED 資料視同「官方確認」
+function daysUntil(dateStr) {
+  if (!dateStr) return null;
+  const today = new Date(new Date().toISOString().slice(0, 10));
+  const target = new Date(dateStr);
+  return Math.round((target - today) / 86400000);
+}
+function urgencyClass(days, source) {
+  if (days != null && days <= 3) return 'urgent';
+  if (source === 'official') return 'official';
+  if (days != null && days <= 14) return 'soon';
+  return '';
+}
+function daysLabel(days) {
+  if (days == null) return '';
+  if (days < 0) return `已過${Math.abs(days)}天`;
+  if (days === 0) return '今天';
+  return `${days}天後`;
+}
+
+function nextReleaseCell(row) {
+  const parts = [];
+  if (row.actual_release_date) parts.push(`<div class="muted-line">上次公布：${esc(row.actual_release_date)}</div>`);
+  if (row.expected_date) {
+    const days = daysUntil(row.expected_date);
+    const cls = urgencyClass(days, row.latest_source === 'fred' ? 'official' : null);
+    const dot = cls ? `<span class="dot ${cls}"></span>` : '';
+    parts.push(`<div class="next-date ${cls}">${dot}下次預期：${esc(row.expected_date)} <span class="days">(${daysLabel(days)})</span></div>`);
+  }
+  if (!parts.length) parts.push('<span class="mtag-none">尚無公布資訊</span>');
+  return parts.join('');
+}
+
+const TIERS = ['核心必追', '重要', '參考即可', '未分類'];
+const FLAG = { '美國': ['US', 'us'], '台灣': ['TW', 'tw'] };
+let allIndicators = [];
+
+function indicatorRow(row) {
+  const flag = FLAG[row.country] || [row.country, ''];
+  return `
+    <div class="indicator-item">
+      <div class="indicator-row">
+        <div class="row-main">
+          <span class="flag ${flag[1]}">${flag[0]}</span>
+          <span class="ind-name">${esc(row.name)}</span>
+          ${row.dimension ? `<span class="ind-dim">${esc(row.dimension)}</span>` : ''}
+          ${row.fred_series_id ? '<span class="ind-fred" title="每晚自動從 FRED 同步">⚡</span>' : ''}
+        </div>
+        <div class="row-value">
+          ${row.latest_value != null
+            ? `<span class="value">${esc(row.latest_value)}</span><span class="period">${esc(row.latest_period)}</span>`
+            : '<span class="mtag-none">尚無數值</span>'}
+        </div>
+        <div class="row-next">${nextReleaseCell(row)}</div>
+        <button class="btn-manual" title="手動更新數值" onclick="manualUpdate(${row.id}, '${esc(row.name)}', '${esc(row.latest_period || '')}')">✎</button>
+      </div>
+      ${row.interpretation_notes || row.publisher || row.latest_notes ? `
+      <div class="row-notes">
+        ${row.interpretation_notes ? esc(row.interpretation_notes) : ''}
+        ${row.latest_notes ? `<div class="muted-line">備註：${esc(row.latest_notes)}</div>` : ''}
+        <div class="meta">${esc(row.publisher || '')}${row.frequency ? ' · ' + esc(row.frequency) : ''}${row.release_timing ? ' · ' + esc(row.release_timing) : ''}</div>
+      </div>` : ''}
+    </div>`;
+}
+
+function renderIndicators() {
+  const el = document.getElementById('indicatorSections');
+  if (!allIndicators.length) { el.innerHTML = '<div class="empty">尚無指標資料</div>'; return; }
+
+  el.innerHTML = TIERS.map(tier => {
+    const list = allIndicators.filter(r => (r.priority_tier || '未分類') === tier);
+    if (!list.length) return '';
+    return `
+      <div class="tier-block">
+        <div class="tier-heading tier-${esc(tier)}">${esc(tier)} <span class="count">${list.length}</span></div>
+        ${list.map(indicatorRow).join('')}
+      </div>`;
+  }).join('');
+}
+
+async function loadIndicators() {
+  const r = await fetch('/api/macro/indicators');
+  const j = await r.json();
+  if (!j.success) return;
+  allIndicators = j.data;
+  renderIndicators();
+}
+
+async function loadFrameworkNotes() {
+  const r = await fetch('/api/macro/notes');
+  const j = await r.json();
+  const el = document.getElementById('frameworkNotes');
+  if (!j.success || !j.data.length) { el.innerHTML = '<div class="empty">尚無框架說明</div>'; return; }
+  el.innerHTML = j.data.map(n => `
+    <div class="ref-card">
+      <div class="ref-title">${esc(n.title)}</div>
+      <div class="ref-body">${esc(n.content)}</div>
+    </div>`).join('');
+}
+
+async function loadTransmissionNotes() {
+  const r = await fetch('/api/macro/transmission-notes');
+  const j = await r.json();
+  const el = document.getElementById('transmissionNotes');
+  if (!j.success || !j.data.length) { el.innerHTML = '<div class="empty">尚無傳導機制範例</div>'; return; }
+  el.innerHTML = j.data.map(n => `
+    <div class="ref-card">
+      ${n.indicator_name ? `<span class="ref-tag">${esc(n.indicator_name)}</span>` : ''}
+      <div class="ref-title">${esc(n.title)}</div>
+      <div class="ref-body">${esc(n.description)}</div>
+    </div>`).join('');
+}
+
+async function loadPrinciples() {
+  const r = await fetch('/api/macro/principles');
+  const j = await r.json();
+  const el = document.getElementById('principles');
+  if (!j.success || !j.data.length) { el.innerHTML = '<div class="empty">尚無分析原則</div>'; return; }
+  el.innerHTML = j.data.map(p => `
+    <div class="ref-card">
+      ${p.source_case ? `<span class="ref-tag">${esc(p.source_case)}</span>` : ''}
+      <div class="ref-body">${esc(p.principle)}</div>
+    </div>`).join('');
+}
+
+async function manualUpdate(id, name, currentPeriod) {
+  const period = prompt(`「${name}」期別（每月填 YYYY-MM，每季填 YYYY-Qn）`, currentPeriod || '');
+  if (!period) return;
+  const valueStr = prompt('數值（可留空）', '');
+  const expectedDate = prompt('下次預期公布日 YYYY-MM-DD（可留空）', '');
+  const notes = prompt('備註（可留空）', '');
+
+  try {
+    const r = await fetch(`/api/macro/indicators/${id}/releases`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        period,
+        value: valueStr ? parseFloat(valueStr) : null,
+        expected_date: expectedDate || null,
+        notes: notes || null,
+      }),
+    });
+    const j = await r.json();
+    if (!j.success) throw new Error(j.error);
+    await loadIndicators();
+  } catch (e) {
+    alert('更新失敗：' + e.message);
+  }
+}
+
+async function triggerSync() {
+  const btn = document.getElementById('syncBtn');
+  btn.disabled = true;
+  btn.textContent = '↻ 同步中...';
+  try {
+    const r = await fetch('/api/macro/sync', { method: 'POST' });
+    const j = await r.json();
+    if (!j.success) throw new Error(j.error);
+    alert(j.updated > 0 ? `FRED 同步完成，更新 ${j.updated} 個指標` : '同步完成，但沒有指標更新成功——請確認 .env 的 FRED_API_KEY 是否正確設定');
+    await loadIndicators();
+  } catch (e) {
+    alert('同步失敗：' + e.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '↻ 同步 FRED 指標';
+  }
+}
+
+loadFrameworkNotes();
+loadIndicators();
+loadTransmissionNotes();
+loadPrinciples();
+</script>
+</body>
+</html>

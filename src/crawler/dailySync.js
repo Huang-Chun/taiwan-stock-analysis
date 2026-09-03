@@ -8,6 +8,7 @@ const { fetchAllStocksLatestPrices } = require('./fetchDailyPrices');
 const { fetchRecentMonthlyRevenue } = require('./fetchMonthlyRevenue');
 const { fetchAndSaveFinancialStatements, getLatestAvailableQuarters } = require('./fetchFinancialStatements');
 const { syncMaterialAnnouncements } = require('./fetchMaterialAnnouncements');
+const { syncMacroIndicators } = require('./fetchMacroIndicators');
 
 const SIGNIFICANT_YOY_SWING = 10;   // 百分點
 const SIGNIFICANT_MARGIN_SWING = 2; // 百分點
@@ -114,6 +115,9 @@ async function runDailySync() {
       console.error('[dailySync] 重大訊息同步失敗:', e.message);
       return { attention: 0, self_disclosure: 0, earnings_schedule: 0, earnings_announced: 0, earnings_call: 0 };
     });
+
+    // 5. 總經指標（FRED，僅有 fred_series_id 的美股指標；缺 FRED_API_KEY 時單純跳過不影響其他步驟）
+    await syncMacroIndicators().catch(e => console.error('[dailySync] 總經指標同步失敗:', e.message));
 
     const after = await snapshotAll(stockIds);
 

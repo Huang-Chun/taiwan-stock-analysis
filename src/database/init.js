@@ -12,7 +12,9 @@ async function initDatabase() {
       host: process.env.DB_HOST,
       user: process.env.DB_USER,
       password: process.env.DB_PASSWORD,
-      port: process.env.DB_PORT
+      port: process.env.DB_PORT,
+      // TiDB Cloud Serverless 需要 SSL；本機 MySQL 設 false
+      ssl: process.env.DB_SSL === 'true' ? { minVersion: 'TLSv1.2', rejectUnauthorized: true } : false,
     });
 
     console.log('✓ 成功連接到 MySQL');

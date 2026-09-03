@@ -370,6 +370,76 @@ CREATE TABLE material_announcements (
 );
 
 -- ============================================
+-- 10. 總經分析框架 (Macro Analysis Framework)
+-- 四大總經維度 / 三層優先級 / 公布行事曆 / 傳導機制 / 判讀原則
+-- 與供應鏈框架分開維護，priority_tier/dimension 未分類時留 NULL
+-- ============================================
+CREATE TABLE macro_indicators (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(100) NOT NULL,
+    country ENUM('美國','台灣') NOT NULL,
+    dimension ENUM('經濟成長動能','勞動市場緊俏度','通膨與物價壓力','資金成本與貨幣政策') NULL,
+    priority_tier ENUM('核心必追','重要','參考即可') NULL,
+    frequency VARCHAR(50),
+    release_timing VARCHAR(100),
+    publisher VARCHAR(100),
+    interpretation_notes TEXT,
+    sort_order INT DEFAULT 0,
+    fred_series_id VARCHAR(20) NULL,         -- 對應 FRED series（僅部分美股指標有免費資料）
+    fred_release_id INT NULL,                -- 首次同步查到後快取，避免每次重查 series/release
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY unique_indicator_name (name)
+);
+
+CREATE TABLE macro_transmission_notes (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    indicator_id INT NULL,
+    title VARCHAR(200) NOT NULL,
+    description TEXT,
+    sort_order INT DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (indicator_id) REFERENCES macro_indicators(id) ON DELETE SET NULL
+);
+
+CREATE TABLE macro_analysis_principles (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    principle TEXT NOT NULL,
+    source_case VARCHAR(200),
+    sort_order INT DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE macro_framework_notes (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    section_key VARCHAR(50) NOT NULL UNIQUE,
+    title VARCHAR(100) NOT NULL,
+    content TEXT,
+    sort_order INT DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+
+-- 總經指標的實際數值 + 公布行事曆（同時扮演「最新數值」跟「發布行事曆」，
+-- ON DUPLICATE KEY UPDATE upsert 自然形成變更紀錄，不接既有 stock_id 形狀的 data_change_log）
+CREATE TABLE macro_indicator_releases (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    indicator_id INT NOT NULL,
+    period VARCHAR(20) NOT NULL,             -- monthly: 'YYYY-MM'；quarterly: 'YYYY-Qn'
+    expected_date DATE NULL,                 -- 下一次/本期預期公布日
+    actual_release_date DATE NULL,           -- 已公布則填實際公布日
+    value DECIMAL(20,4) NULL,
+    unit VARCHAR(20) NULL,
+    source ENUM('fred','manual') NOT NULL,
+    notes TEXT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (indicator_id) REFERENCES macro_indicators(id) ON DELETE CASCADE,
+    UNIQUE KEY unique_indicator_period (indicator_id, period),
+    INDEX idx_expected_date (expected_date)
+);
+
+-- ============================================
 -- 常用查詢視圖
 -- ============================================
 CREATE VIEW latest_financial_data AS
