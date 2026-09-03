@@ -37,6 +37,15 @@ body { background: var(--bg); color: var(--text); font-family: -apple-system, Bl
 .tab-btn:hover { color:var(--text); }
 .tab-btn.active { color:var(--blue); border-bottom-color:var(--blue); }
 
+.tier-tabs { display:grid; grid-template-columns:repeat(3, 1fr); gap:10px; margin-bottom:18px; }
+.tier-tab { text-align:left; background:var(--bg2); border:1px solid var(--border); border-radius:var(--radius); padding:10px 14px; cursor:pointer; display:flex; flex-direction:column; gap:3px; }
+.tier-tab:hover { border-color:var(--blue); }
+.tier-tab.active { border-color:var(--blue); background:var(--bg3); }
+.tier-tab-label { font-size:13px; font-weight:700; color:var(--text); }
+.tier-tab.active .tier-tab-label { color:var(--blue); }
+.tier-tab-hint { font-size:11px; color:var(--muted); line-height:1.4; }
+@media (max-width: 900px) { .tier-tabs { grid-template-columns:1fr; } }
+
 .range-btns { display:flex; gap:6px; margin:10px 0 4px; }
 .range-btn { background:var(--bg3); border:1px solid var(--border); color:var(--muted); border-radius:6px; padding:4px 10px; font-size:11.5px; cursor:pointer; }
 .range-btn:hover { border-color:var(--blue); color:var(--text); }
@@ -126,6 +135,10 @@ table.rtable td.health-neutral { color:var(--muted); }
 
 .chart-block { margin:10px 0 20px; }
 .chart-block svg { width:100%; height:auto; display:block; overflow:visible; }
+.chart-row { display:grid; grid-template-columns:repeat(3, 1fr); gap:16px; margin:14px 0 4px; }
+.chart-row .chart-block { margin:6px 0 0; }
+.chart-label { font-size:11px; color:var(--muted); margin-bottom:2px; }
+@media (max-width: 900px) { .chart-row { grid-template-columns:1fr; } }
 .chart-mark { cursor:pointer; }
 .chart-mark:hover, .chart-mark:focus { filter:brightness(1.35); outline:none; }
 .chart-gridline { stroke:var(--border); stroke-width:1; }
@@ -200,6 +213,9 @@ let scenariosData = null;
 let financialHealth = null;
 let viewMode = true;
 let activeTab = 'quant'; // 'quant' = 基本面量化指標, 'research' = 研究判斷
+// 基本面分析依「多常需要看」分三層(討論定案於研究筆記)：
+// 1=每季必看(健不健康)，2=只在不健康或要決策時看(貴不貴)，3=背景監控(體質撐不撐得住)——預設停在第1層
+let quantTier = 1;
 
 function esc(s) { return (s ?? '').toString().replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 function fieldValue(text) {
@@ -239,7 +255,7 @@ async function load() {
     fetch(`/api/stocks/${stockId}/peg`).then(x => x.json()).catch(() => null),
     fetch(`/api/stocks/${stockId}/peer-valuation`).then(x => x.json()).catch(() => null),
     fetch(`/api/stocks/${stockId}/scenarios`).then(x => x.json()).catch(() => null),
-    fetch(`/api/stocks/${stockId}/financial-health`).then(x => x.json()).catch(() => null),
+    fetch(`/api/stocks/${stockId}/financial-health?quarters=12`).then(x => x.json()).catch(() => null),
   ]);
   monthlyRevenue = revRes?.success ? revRes.data : null;
   costData = costRes?.success ? costRes.data : null;
@@ -604,6 +620,47 @@ function healthPill(key, value, thresholds) {
     : (value >= t.good ? 'healthy' : value >= t.ok ? 'neutral' : 'unhealthy');
   return ` <span class="health-${level}" style="font-size:11px;">(${HEALTH_LABEL[level]})</span>`;
 }
+
+// 找近幾季裡這個欄位的最低/最高值(連同發生的季度)，讓摘要能顯示區間而不是只有最新一筆
+function seriesRange(series, field) {
+  const vals = series.filter(r => r[field] != null);
+  if (!vals.length) return null;
+  let min = vals[0], max = vals[0];
+  for (const r of vals) {
+    if (r[field] < min[field]) min = r;
+    if (r[field] > max[field]) max = r;
+  }
+  return { min: min[field], minPeriod: min.period, max: max[field], maxPeriod: max.period };
+}
+
+// 從最新一季往前數，連續同方向變動的季數(單純描述數字動向，不代表好壞——例如負債比率連續上升不一定不好)
+function seriesStreak(series, field) {
+  const vals = series.filter(r => r[field] != null);
+  if (vals.length < 2) return null;
+  let dir = null, count = 1;
+  for (let i = vals.length - 1; i > 0; i--) {
+    const diff = vals[i][field] - vals[i - 1][field];
+    if (Math.abs(diff) < 0.01) break;
+    const d = diff > 0 ? 1 : -1;
+    if (dir === null) { dir = d; count = 2; }
+    else if (d === dir) count++;
+    else break;
+  }
+  return dir == null ? null : { dir, count };
+}
+
+function healthMetricChart(series, field, opts) {
+  const points = series.map(r => ({ label: r.period, value: r[field] }));
+  return renderLineChart(points, opts);
+}
+
+function rangeText(series, field, unit = '%') {
+  const r = seriesRange(series, field);
+  if (!r) return '—';
+  const s = seriesStreak(series, field);
+  const streakText = s && s.count >= 3 ? `，連續${s.count}季${s.dir > 0 ? '上升' : '下降'}` : '';
+  return `${r.min}${unit}(${esc(r.minPeriod)})~${r.max}${unit}(${esc(r.maxPeriod)})${streakText}`;
+}
 function financialHealthCard() {
   if (!financialHealth) {
     return `<div class="card">
@@ -622,15 +679,42 @@ function financialHealthCard() {
         <span class="tag">${esc(latest.period)}</span>
         <span class="label">ROE(年化) ${fmtOrDash(latest.ttm_roe)}%${healthPill('roe', latest.ttm_roe, thresholds)}${trendArrow(trend.ttm_roe)}　流動比率 ${latest.current_ratio}%${healthPill('current_ratio', latest.current_ratio, thresholds)}${trendArrow(trend.current_ratio)}　負債比率 ${latest.debt_ratio}%${healthPill('debt_ratio', latest.debt_ratio, thresholds)}${trendArrow(-trend.debt_ratio)}</span>
         <span class="caveat">${esc(currentRatioNote)}</span>
+        <div style="color:var(--muted);font-size:11.5px;margin-top:4px;">
+          近${series.length}季區間 — ROE ${rangeText(series, 'ttm_roe')}　流動比率 ${rangeText(series, 'current_ratio')}　負債比率 ${rangeText(series, 'debt_ratio')}
+        </div>
       </div>
-      <details class="detail-fold">
+      <div class="chart-row">
+        <div>
+          <div class="chart-label">ROE(年化) 走勢</div>
+          ${healthMetricChart(series, 'ttm_roe', { unit: '%', color: 'var(--blue)', refLines: [
+            { value: thresholds.roe.good, label: `優異 ${thresholds.roe.good}%` },
+            { value: thresholds.roe.ok, label: `中等 ${thresholds.roe.ok}%` },
+          ] })}
+        </div>
+        <div>
+          <div class="chart-label">流動比率 走勢</div>
+          ${healthMetricChart(series, 'current_ratio', { unit: '%', color: 'var(--blue)', refLines: [
+            { value: thresholds.current_ratio.good, label: `寬鬆 ${thresholds.current_ratio.good}%` },
+            { value: thresholds.current_ratio.ok, label: `健康 ${thresholds.current_ratio.ok}%` },
+          ] })}
+        </div>
+        <div>
+          <div class="chart-label">負債比率 走勢</div>
+          ${healthMetricChart(series, 'debt_ratio', { unit: '%', color: 'var(--blue)', refLines: [
+            { value: thresholds.debt_ratio.good, label: `保守 ${thresholds.debt_ratio.good}%` },
+            { value: thresholds.debt_ratio.ok, label: `常見 ${thresholds.debt_ratio.ok}%` },
+          ] })}
+        </div>
+      </div>
+      <details class="detail-fold" open>
         <summary>近${series.length}季明細</summary>
         <div class="table-scroll"><table class="rtable">
           <tr>
             <th>季度</th>
             ${thTip('ROE(年化)', thresholds.roe.note)}
             ${thTip('ROA(年化)', thresholds.roa.note)}
-            <th>營業利益率</th><th>淨利率</th>
+            ${thTip('營業利益率', '營業利益(毛利−營業費用) ÷ 營收 × 100。沒有普適門檻，重點看跟毛利率的差距是否穩定——差距=被營業費用吃掉多少，差距突然變大代表費用侵蝕獲利，不是本業變差')}
+            ${thTip('淨利率', '淨利(營業利益+業外損益−稅金) ÷ 營收 × 100。沒有普適門檻，重點看跟營業利益率的差距是否穩定——差距=被業外損益/稅金吃掉多少')}
             ${thTip('流動比率', thresholds.current_ratio.note)}
             ${thTip('負債比率', thresholds.debt_ratio.note)}
           </tr>
@@ -1005,9 +1089,22 @@ function eventsRead(d) {
 
 function switchTab(tab) { activeTab = tab; render(); }
 
+function switchQuantTier(t) { quantTier = t; render(); }
+
+const QUANT_TIERS = [
+  { id: 1, label: '① 這季健不健康', hint: '每季財報公布後必看——毛利率有沒有惡化、COGS怎麼解釋營收變化', content: () => costCard() },
+  { id: 2, label: '② 貴不貴／下一季範圍', hint: '確認健康與否、或考慮進場/加碼/賣出時才需要看', content: () => peCard() + valuationCompareCard() + scenariosCard() },
+  { id: 3, label: '③ 財務體質（背景監控）', hint: '不用每次都看，持有期間定期(例如每季)回頭確認體質有沒有惡化', content: () => financialHealthCard() },
+];
 function quantTabContent() {
-  return costCard() + peCard() + valuationCompareCard() + scenariosCard() + financialHealthCard();
-  // 之後陸續加入的基本面量化指標也接在這個function裡，同一個分頁
+  const tabs = QUANT_TIERS.map(t => `
+    <button class="tier-tab ${quantTier === t.id ? 'active' : ''}" onclick="switchQuantTier(${t.id})">
+      <span class="tier-tab-label">${esc(t.label)}</span>
+      <span class="tier-tab-hint">${esc(t.hint)}</span>
+    </button>`).join('');
+  const active = QUANT_TIERS.find(t => t.id === quantTier) || QUANT_TIERS[0];
+  return `<div class="tier-tabs">${tabs}</div>${active.content()}`;
+  // 之後陸續加入的基本面量化指標依「多常需要看」分進對應層級的 content()
 }
 
 function researchTabContent(d) {

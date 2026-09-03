@@ -72,7 +72,9 @@
       "Bash(git add:*)",
       "Bash(C:\\\\Program Files\\\\MySQL\\\\MySQL Server 8.0\\\\bin\\\\mysql.exe:*)",
       "WebFetch(domain:finmindtrade.com)",
-      "Artifact"
+      "Artifact",
+      "Bash(npm run *)",
+      "Bash(awk 'NR==800,NR==850' app.js)"
     ]
   },
   "enableAllProjectMcpServers": true,
