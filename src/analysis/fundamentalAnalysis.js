@@ -506,6 +506,7 @@ const HEALTH_THRESHOLDS = {
   roa: { good: 8, ok: 4, unit: '%', note: '年化(TTM)資產報酬率——≥8%優異，4~8%中等，<4%偏弱。天生比ROE低(分母含負債)，重資產產業偏低不代表公司不好' },
   current_ratio: { good: 200, ok: 100, unit: '%', note: '流動資產÷流動負債——≥200%寬鬆，100~200%健康，<100%短期償債能力吃緊需要留意' },
   debt_ratio: { good: 40, ok: 60, unit: '%', reverse: true, note: '總負債÷總資產——<40%保守，40~60%常見，>60%槓桿偏高。資本密集產業(例如半導體)因為要蓋廠買設備，負債比天生偏高不算異常，重點是有沒有持續往上衝' },
+  cash_quality: { good: 1.0, ok: 0.3, unit: '倍', note: '單季營業現金流÷單季稅後淨利——≥1健康(淨利有真的變成現金甚至更多)，0.3~1中性(可能是收款節奏造成的季節性落差)，<0.3是紅旗(淨利幾乎沒轉成現金，甚至現金流出)。不是鐵律，要連續看才準，單季波動先別急著下結論' },
 };
 function assessMetric(key, value) {
   const t = HEALTH_THRESHOLDS[key];
@@ -524,35 +525,71 @@ async function getFinancialHealth(stockId, quarters = 8) {
 
   // ROE/ROA 官方沒有現成的年化(TTM)版本，只有單季——自己拉近4季淨利加總，除以當期期末權益/資產算出來
   const [fsRows] = await pool.query(
-    `SELECT year, quarter, net_income, equity, total_assets FROM financial_statements
+    `SELECT year, quarter, revenue, net_income, equity, total_assets,
+            operating_cash_flow, free_cash_flow
+     FROM financial_statements
      WHERE stock_id = ? AND net_income IS NOT NULL ORDER BY year, quarter`,
     [stockId]
   );
   const fsMap = new Map(fsRows.map(r => [`${r.year}Q${r.quarter}`, r]));
   const fsList = fsRows; // 已經是年季正序
 
-  function ttmRoeRoa(year, quarter) {
+  // TTM ROE/ROA + 杜邦分解(淨利率×資產週轉率×權益乘數=ROE)，三個因子都用TTM，跟ROE(TTM)互相對得上
+  function ttmDupont(year, quarter) {
     const idx = fsList.findIndex(r => r.year === year && r.quarter === quarter);
-    if (idx < 3) return { ttm_roe: null, ttm_roa: null };
+    if (idx < 3) return { ttm_roe: null, ttm_roa: null, dupont: null };
     const window = fsList.slice(idx - 3, idx + 1);
     const ttmNetIncome = window.reduce((s, r) => s + parseFloat(r.net_income), 0);
+    const ttmRevenue = window.every(r => r.revenue != null)
+      ? window.reduce((s, r) => s + parseFloat(r.revenue), 0) : null;
     const cur = fsMap.get(`${year}Q${quarter}`);
     const equity = cur?.equity != null ? parseFloat(cur.equity) : null;
     const assets = cur?.total_assets != null ? parseFloat(cur.total_assets) : null;
-    return {
-      ttm_roe: equity ? +(ttmNetIncome / equity * 100).toFixed(2) : null,
-      ttm_roa: assets ? +(ttmNetIncome / assets * 100).toFixed(2) : null,
-    };
+
+    const ttm_roe = equity ? +(ttmNetIncome / equity * 100).toFixed(2) : null;
+    const ttm_roa = assets ? +(ttmNetIncome / assets * 100).toFixed(2) : null;
+    // ROE/ROA背後的原始金額，光看%容易忘記量級，附上金額方便驗算
+    const raw = { ttm_net_income: ttmNetIncome, equity, total_assets: assets, ttm_revenue: ttmRevenue };
+
+    let dupont = null;
+    if (ttmRevenue && assets && equity) {
+      const netMargin = ttmNetIncome / ttmRevenue;
+      const assetTurnover = ttmRevenue / assets;
+      const equityMultiplier = assets / equity;
+      dupont = {
+        net_margin_ttm: +(netMargin * 100).toFixed(2),
+        asset_turnover_ttm: +assetTurnover.toFixed(2),
+        equity_multiplier: +equityMultiplier.toFixed(2),
+        roe_recomputed: +(netMargin * assetTurnover * equityMultiplier * 100).toFixed(2),
+      };
+    }
+    return { ttm_roe, ttm_roa, dupont, raw };
   }
 
-  const series = ratioRows.reverse().map(r => ({
-    period: `${r.year}Q${r.quarter}`,
-    ...ttmRoeRoa(r.year, r.quarter),
-    operating_margin: r.operating_margin != null ? parseFloat(r.operating_margin) : null,
-    net_margin: r.net_margin != null ? parseFloat(r.net_margin) : null,
-    current_ratio: r.current_ratio != null ? parseFloat(r.current_ratio) : null,
-    debt_ratio: r.debt_ratio != null ? parseFloat(r.debt_ratio) : null,
-  }));
+  const series = ratioRows.reverse().map(r => {
+    const cur = fsMap.get(`${r.year}Q${r.quarter}`);
+    const netIncome = cur?.net_income != null ? parseFloat(cur.net_income) : null;
+    const ocf = cur?.operating_cash_flow != null ? parseFloat(cur.operating_cash_flow) : null;
+    const cashQuality = (netIncome && ocf != null) ? +(ocf / netIncome).toFixed(2) : null;
+    const { dupont, ...ttm } = ttmDupont(r.year, r.quarter);
+    return {
+      period: `${r.year}Q${r.quarter}`,
+      ...ttm,
+      dupont,
+      // dupont的三個因子額外攤平到最上層，方便前端直接畫走勢圖(healthMetricChart吃r[field])
+      net_margin_ttm: dupont?.net_margin_ttm ?? null,
+      asset_turnover_ttm: dupont?.asset_turnover_ttm ?? null,
+      equity_multiplier: dupont?.equity_multiplier ?? null,
+      operating_margin: r.operating_margin != null ? parseFloat(r.operating_margin) : null,
+      net_margin: r.net_margin != null ? parseFloat(r.net_margin) : null,
+      current_ratio: r.current_ratio != null ? parseFloat(r.current_ratio) : null,
+      debt_ratio: r.debt_ratio != null ? parseFloat(r.debt_ratio) : null,
+      net_income: netIncome,
+      operating_cash_flow: ocf,
+      cash_quality: cashQuality,
+      free_cash_flow: cur?.free_cash_flow != null ? parseFloat(cur.free_cash_flow) : null,
+    };
+  });
 
   const latest = series[series.length - 1];
   const prev = series.length > 1 ? series[series.length - 2] : null;
@@ -564,11 +601,13 @@ async function getFinancialHealth(stockId, quarters = 8) {
     trend: {
       ttm_roe: trend('ttm_roe'), ttm_roa: trend('ttm_roa'), operating_margin: trend('operating_margin'),
       net_margin: trend('net_margin'), current_ratio: trend('current_ratio'), debt_ratio: trend('debt_ratio'),
+      cash_quality: trend('cash_quality'), free_cash_flow: trend('free_cash_flow'),
     },
     assessment: {
       roe: assessMetric('roe', latest.ttm_roe), roa: assessMetric('roa', latest.ttm_roa),
       current_ratio: assessMetric('current_ratio', latest.current_ratio),
       debt_ratio: assessMetric('debt_ratio', latest.debt_ratio),
+      cash_quality: assessMetric('cash_quality', latest.cash_quality),
     },
     thresholds: HEALTH_THRESHOLDS,
   };

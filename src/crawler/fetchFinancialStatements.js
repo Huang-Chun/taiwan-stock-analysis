@@ -22,7 +22,12 @@ const BALANCE_SHEET_MAP = {
   'CurrentLiabilities': 'current_liabilities',
   'NoncurrentLiabilities': 'non_current_liabilities',
   'Equity': 'equity',
+  'Inventories': 'inventory',
+  'AccountsReceivableNet': 'accounts_receivable',
 };
+
+// 注意：FinMind TaiwanStockFinancialStatements 資料集沒有拆出 InterestExpense 這條線
+// (含台積電在內都查不到)，所以利息保障倍數無法用這個資料源計算，故意不加對照欄位。
 
 const CASH_FLOW_MAP = {
   'NetCashInflowFromOperatingActivities': 'operating_cash_flow',
@@ -103,6 +108,8 @@ function buildRecords(incomeRows, balanceRows, cashFlowRows, year, quarter) {
       current_liabilities: balance.current_liabilities ?? null,
       non_current_liabilities: balance.non_current_liabilities ?? null,
       equity: balance.equity ?? null,
+      inventory: balance.inventory ?? null,
+      accounts_receivable: balance.accounts_receivable ?? null,
       operating_cash_flow: operatingCF,
       investing_cash_flow: investingCF,
       financing_cash_flow: cashFlow.financing_cash_flow ?? null,
@@ -201,8 +208,9 @@ async function saveRecords(records) {
          operating_expense, operating_income, non_operating_income, pretax_income,
          net_income, eps, total_assets, current_assets, non_current_assets,
          total_liabilities, current_liabilities, non_current_liabilities, equity,
+         inventory, accounts_receivable,
          operating_cash_flow, investing_cash_flow, financing_cash_flow, free_cash_flow)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON DUPLICATE KEY UPDATE
         report_type = VALUES(report_type), revenue = VALUES(revenue),
         operating_cost = VALUES(operating_cost), gross_profit = VALUES(gross_profit),
@@ -212,14 +220,16 @@ async function saveRecords(records) {
         total_assets = VALUES(total_assets), current_assets = VALUES(current_assets),
         non_current_assets = VALUES(non_current_assets), total_liabilities = VALUES(total_liabilities),
         current_liabilities = VALUES(current_liabilities), non_current_liabilities = VALUES(non_current_liabilities),
-        equity = VALUES(equity), operating_cash_flow = VALUES(operating_cash_flow),
+        equity = VALUES(equity), inventory = VALUES(inventory), accounts_receivable = VALUES(accounts_receivable),
+        operating_cash_flow = VALUES(operating_cash_flow),
         investing_cash_flow = VALUES(investing_cash_flow), financing_cash_flow = VALUES(financing_cash_flow),
         free_cash_flow = VALUES(free_cash_flow)`,
         [r.stock_id, r.year, r.quarter, r.report_type, r.revenue, r.operating_cost,
          r.gross_profit, r.operating_expense, r.operating_income, r.non_operating_income,
          r.pretax_income, r.net_income, r.eps, r.total_assets, r.current_assets,
          r.non_current_assets, r.total_liabilities, r.current_liabilities,
-         r.non_current_liabilities, r.equity, r.operating_cash_flow, r.investing_cash_flow,
+         r.non_current_liabilities, r.equity, r.inventory, r.accounts_receivable,
+         r.operating_cash_flow, r.investing_cash_flow,
          r.financing_cash_flow, r.free_cash_flow]
       );
 
@@ -241,20 +251,48 @@ async function saveRecords(records) {
         ? (r.current_assets / r.current_liabilities * 100) : null, 99999999.99);
       const debtToEquity = clamp((r.equity && r.equity !== 0 && r.total_liabilities != null)
         ? (r.total_liabilities / r.equity) : null, 99999999.99);
+      const quickRatio = clamp((r.current_liabilities && r.current_liabilities !== 0 &&
+        r.current_assets != null && r.inventory != null)
+        ? ((r.current_assets - r.inventory) / r.current_liabilities * 100) : null, 99999999.99);
+
+      // 存貨/應收帳款週轉率(次)：用「平均」餘額(上一季+本季)/2，需要查上一季資料
+      let inventoryTurnover = null, receivableTurnover = null;
+      if (r.inventory != null || r.accounts_receivable != null) {
+        const prevQuarter = r.quarter === 1 ? 4 : r.quarter - 1;
+        const prevYear = r.quarter === 1 ? r.year - 1 : r.year;
+        const [prevRows] = await connection.query(
+          'SELECT inventory, accounts_receivable FROM financial_statements WHERE stock_id = ? AND year = ? AND quarter = ?',
+          [r.stock_id, prevYear, prevQuarter]
+        );
+        const prev = prevRows[0];
+        if (prev) {
+          if (prev.inventory != null && r.inventory != null && r.operating_cost != null) {
+            const avgInventory = (Number(prev.inventory) + Number(r.inventory)) / 2;
+            inventoryTurnover = clamp(avgInventory !== 0 ? (r.operating_cost / avgInventory) : null, 9999.99);
+          }
+          if (prev.accounts_receivable != null && r.accounts_receivable != null && r.revenue != null) {
+            const avgReceivable = (Number(prev.accounts_receivable) + Number(r.accounts_receivable)) / 2;
+            receivableTurnover = clamp(avgReceivable !== 0 ? (r.revenue / avgReceivable) : null, 9999.99);
+          }
+        }
+      }
 
       if (grossMargin != null || roe != null) {
         await connection.query(
           `INSERT INTO financial_ratios
           (stock_id, year, quarter, gross_margin, operating_margin, net_margin,
-           roe, roa, debt_ratio, current_ratio, debt_to_equity)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           roe, roa, debt_ratio, current_ratio, quick_ratio, debt_to_equity,
+           inventory_turnover, receivable_turnover)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           ON DUPLICATE KEY UPDATE
           gross_margin = VALUES(gross_margin), operating_margin = VALUES(operating_margin),
           net_margin = VALUES(net_margin), roe = VALUES(roe), roa = VALUES(roa),
           debt_ratio = VALUES(debt_ratio), current_ratio = VALUES(current_ratio),
-          debt_to_equity = VALUES(debt_to_equity)`,
+          quick_ratio = VALUES(quick_ratio), debt_to_equity = VALUES(debt_to_equity),
+          inventory_turnover = VALUES(inventory_turnover), receivable_turnover = VALUES(receivable_turnover)`,
           [r.stock_id, r.year, r.quarter, grossMargin, operatingMargin, netMargin,
-           roe, roa, debtRatio, currentRatio, debtToEquity]
+           roe, roa, debtRatio, currentRatio, quickRatio, debtToEquity,
+           inventoryTurnover, receivableTurnover]
         );
       }
      } catch (rowError) {

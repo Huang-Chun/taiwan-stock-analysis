@@ -134,11 +134,15 @@ table.rtable td.health-neutral { color:var(--muted); }
 .event-date { color:var(--blue); font-weight:600; margin-right:8px; }
 
 .chart-block { margin:10px 0 20px; }
-.chart-block svg { width:100%; height:auto; display:block; overflow:visible; }
-.chart-row { display:grid; grid-template-columns:repeat(3, 1fr); gap:16px; margin:14px 0 4px; }
+.chart-block svg { width:100%; max-width:520px; height:auto; display:block; overflow:visible; }
+.chart-row { display:grid; grid-template-columns:1fr; gap:16px; margin:14px 0 4px; }
 .chart-row .chart-block { margin:6px 0 0; }
+.metric-row { display:flex; gap:24px; align-items:center; flex-wrap:wrap; margin:14px 0 4px; }
+.metric-row .metric-formula { flex:1 1 260px; font-size:12px; color:var(--muted); line-height:1.7; }
+.metric-row .metric-formula .formula-title { color:var(--fg); font-size:13px; font-weight:600; margin-bottom:4px; }
+.metric-row .metric-formula .formula-calc { font-family:ui-monospace,monospace; }
+.metric-row .chart-block { flex:1 1 320px; margin:0; }
 .chart-label { font-size:11px; color:var(--muted); margin-bottom:2px; }
-@media (max-width: 900px) { .chart-row { grid-template-columns:1fr; } }
 .chart-mark { cursor:pointer; }
 .chart-mark:hover, .chart-mark:focus { filter:brightness(1.35); outline:none; }
 .chart-gridline { stroke:var(--border); stroke-width:1; }
@@ -675,22 +679,105 @@ function financialHealthCard() {
   return `
     <div class="card">
       <div class="card-title">財務體質 <span class="hint">負債比/流動比率/ROE/ROA/營業利益率/淨利率——稼動率觀察那條線只看毛利率，這裡補資產負債表跟獲利效率。ROE/ROA是近4季加總後年化的數字，不是單季，才能跟「ROE 15%算優異」這種常見門檻對得起來</span></div>
+
+      <div class="card-title" style="font-size:13px;">賺錢效率：ROE / ROA <span class="hint">股東的錢、公司所有資產，一年各賺回多少%——這是財務體質第一步先看的兩個數字</span></div>
       <div class="provisional-badge">
         <span class="tag">${esc(latest.period)}</span>
-        <span class="label">ROE(年化) ${fmtOrDash(latest.ttm_roe)}%${healthPill('roe', latest.ttm_roe, thresholds)}${trendArrow(trend.ttm_roe)}　流動比率 ${latest.current_ratio}%${healthPill('current_ratio', latest.current_ratio, thresholds)}${trendArrow(trend.current_ratio)}　負債比率 ${latest.debt_ratio}%${healthPill('debt_ratio', latest.debt_ratio, thresholds)}${trendArrow(-trend.debt_ratio)}</span>
-        <span class="caveat">${esc(currentRatioNote)}</span>
+        <span class="label">ROE(年化) ${fmtOrDash(latest.ttm_roe)}%${healthPill('roe', latest.ttm_roe, thresholds)}${trendArrow(trend.ttm_roe)}　ROA(年化) ${fmtOrDash(latest.ttm_roa)}%${healthPill('roa', latest.ttm_roa, thresholds)}${trendArrow(trend.ttm_roa)}</span>
         <div style="color:var(--muted);font-size:11.5px;margin-top:4px;">
-          近${series.length}季區間 — ROE ${rangeText(series, 'ttm_roe')}　流動比率 ${rangeText(series, 'current_ratio')}　負債比率 ${rangeText(series, 'debt_ratio')}
+          近${series.length}季區間 — ROE ${rangeText(series, 'ttm_roe')}　ROA ${rangeText(series, 'ttm_roa')}
         </div>
       </div>
-      <div class="chart-row">
-        <div>
+      <div class="metric-row">
+        <div class="metric-formula">
+          <div class="formula-title">ROE(年化) 怎麼算出來的</div>
+          <div>= 近4季稅後淨利加總 ÷ 最新一季期末股東權益 × 100</div>
+          <div class="formula-calc">= ${fmtE(latest.raw?.ttm_net_income)} ÷ ${fmtE(latest.raw?.equity)} × 100</div>
+          <div class="formula-calc">= <b style="color:var(--fg);">${fmtOrDash(latest.ttm_roe)}%</b></div>
+        </div>
+        <div class="chart-block">
           <div class="chart-label">ROE(年化) 走勢</div>
           ${healthMetricChart(series, 'ttm_roe', { unit: '%', color: 'var(--blue)', refLines: [
             { value: thresholds.roe.good, label: `優異 ${thresholds.roe.good}%` },
             { value: thresholds.roe.ok, label: `中等 ${thresholds.roe.ok}%` },
           ] })}
         </div>
+      </div>
+      <div class="metric-row">
+        <div class="metric-formula">
+          <div class="formula-title">ROA(年化) 怎麼算出來的</div>
+          <div>= 近4季稅後淨利加總 ÷ 最新一季期末總資產 × 100</div>
+          <div class="formula-calc">= ${fmtE(latest.raw?.ttm_net_income)} ÷ ${fmtE(latest.raw?.total_assets)} × 100</div>
+          <div class="formula-calc">= <b style="color:var(--fg);">${fmtOrDash(latest.ttm_roa)}%</b></div>
+        </div>
+        <div class="chart-block">
+          <div class="chart-label">ROA(年化) 走勢</div>
+          ${healthMetricChart(series, 'ttm_roa', { unit: '%', color: 'var(--blue)', refLines: [
+            { value: thresholds.roa.good, label: `優異 ${thresholds.roa.good}%` },
+            { value: thresholds.roa.ok, label: `中等 ${thresholds.roa.ok}%` },
+          ] })}
+        </div>
+      </div>
+
+      ${latest.dupont ? `
+      <div class="card-title" style="margin-top:16px;font-size:13px;">ROE是怎麼賺出來的：杜邦分解 <span class="hint">ROE(TTM) = 淨利率(TTM) × 資產週轉率(TTM) × 權益乘數——拆開看ROE是賺得多、轉得快、還是借得兇撐出來的。權益乘數同期竄升，ROE同期上升，代表是加槓桿撐出來的，體質比較脆弱</span></div>
+      <div class="provisional-badge">
+        <span class="tag">${esc(latest.period)}</span>
+        <span class="label">淨利率(TTM) ${fmtOrDash(latest.dupont.net_margin_ttm)}% × 資產週轉率(TTM) ${fmtOrDash(latest.dupont.asset_turnover_ttm)}次 × 權益乘數 ${fmtOrDash(latest.dupont.equity_multiplier)} = ROE ${fmtOrDash(latest.dupont.roe_recomputed)}%</span>
+        <span class="caveat">跟上面ROE(年化) ${fmtOrDash(latest.ttm_roe)}% 對得上，代表拆解沒算錯</span>
+      </div>
+      <div class="metric-row">
+        <div class="metric-formula">
+          <div class="formula-title">淨利率(TTM)——賺得多不多</div>
+          <div>= 近4季稅後淨利加總 ÷ 近4季營收加總 × 100</div>
+          <div class="formula-calc">= ${fmtE(latest.raw?.ttm_net_income)} ÷ ${fmtE(latest.raw?.ttm_revenue)} × 100</div>
+          <div class="formula-calc">= <b style="color:var(--fg);">${fmtOrDash(latest.dupont.net_margin_ttm)}%</b></div>
+        </div>
+        <div class="chart-block">
+          <div class="chart-label">淨利率(TTM) 走勢</div>
+          ${healthMetricChart(series, 'net_margin_ttm', { unit: '%', color: 'var(--blue)' })}
+        </div>
+      </div>
+      <div class="metric-row">
+        <div class="metric-formula">
+          <div class="formula-title">資產週轉率(TTM)——轉得快不快</div>
+          <div>= 近4季營收加總 ÷ 最新一季期末總資產</div>
+          <div>(同樣的資產創造多少營收)</div>
+          <div class="formula-calc">= ${fmtE(latest.raw?.ttm_revenue)} ÷ ${fmtE(latest.raw?.total_assets)}</div>
+          <div class="formula-calc">= <b style="color:var(--fg);">${fmtOrDash(latest.dupont.asset_turnover_ttm)}次</b></div>
+        </div>
+        <div class="chart-block">
+          <div class="chart-label">資產週轉率(TTM) 走勢</div>
+          ${healthMetricChart(series, 'asset_turnover_ttm', { unit: '次', color: 'var(--blue)' })}
+        </div>
+      </div>
+      <div class="metric-row">
+        <div class="metric-formula">
+          <div class="formula-title">權益乘數——借得兇不兇</div>
+          <div>= 最新一季期末總資產 ÷ 最新一季期末股東權益</div>
+          <div>(同期跟ROE一起竄升要留意，代表槓桿撐出來的)</div>
+          <div class="formula-calc">= ${fmtE(latest.raw?.total_assets)} ÷ ${fmtE(latest.raw?.equity)}</div>
+          <div class="formula-calc">= <b style="color:var(--fg);">${fmtOrDash(latest.dupont.equity_multiplier)}</b></div>
+        </div>
+        <div class="chart-block">
+          <div class="chart-label">權益乘數 走勢</div>
+          ${healthMetricChart(series, 'equity_multiplier', { unit: '', color: 'var(--blue)' })}
+        </div>
+      </div>
+      ` : ''}
+
+      <hr style="border:none;border-top:1px solid var(--border);margin:20px 0;">
+
+      <div class="card-title" style="font-size:13px;">短期償債能力：流動比率 / 負債比率</div>
+      <div class="provisional-badge">
+        <span class="tag">${esc(latest.period)}</span>
+        <span class="label">流動比率 ${latest.current_ratio}%${healthPill('current_ratio', latest.current_ratio, thresholds)}${trendArrow(trend.current_ratio)}　負債比率 ${latest.debt_ratio}%${healthPill('debt_ratio', latest.debt_ratio, thresholds)}${trendArrow(-trend.debt_ratio)}</span>
+        <span class="caveat">${esc(currentRatioNote)}</span>
+        <div style="color:var(--muted);font-size:11.5px;margin-top:4px;">
+          近${series.length}季區間 — 流動比率 ${rangeText(series, 'current_ratio')}　負債比率 ${rangeText(series, 'debt_ratio')}
+        </div>
+      </div>
+      <div class="chart-row">
         <div>
           <div class="chart-label">流動比率 走勢</div>
           ${healthMetricChart(series, 'current_ratio', { unit: '%', color: 'var(--blue)', refLines: [
@@ -706,6 +793,27 @@ function financialHealthCard() {
           ] })}
         </div>
       </div>
+
+      <div class="card-title" style="margin-top:16px;font-size:13px;">現金流品質 <span class="hint">${esc(thresholds.cash_quality.note)}</span></div>
+      <div class="provisional-badge">
+        <span class="tag">${esc(latest.period)}</span>
+        <span class="label">現金含金量 ${fmtOrDash(latest.cash_quality)}倍${healthPill('cash_quality', latest.cash_quality, thresholds)}${trendArrow(trend.cash_quality)}　自由現金流 ${fmtE(latest.free_cash_flow)}${trendArrow(trend.free_cash_flow)}</span>
+        <span class="caveat">自由現金流長期為負不必然不好——資本密集產業擴產期正常，要搭配稼動率觀察/情境推估一起看，不是單獨判健康度的指標</span>
+      </div>
+      <div class="chart-row">
+        <div>
+          <div class="chart-label">現金含金量(營業現金流÷淨利) 走勢</div>
+          ${healthMetricChart(series, 'cash_quality', { unit: '倍', color: 'var(--blue)', refLines: [
+            { value: thresholds.cash_quality.good, label: `健康 ${thresholds.cash_quality.good}倍` },
+            { value: thresholds.cash_quality.ok, label: `紅旗線 ${thresholds.cash_quality.ok}倍` },
+          ] })}
+        </div>
+        <div>
+          <div class="chart-label">自由現金流(營業現金流−資本支出) 走勢</div>
+          ${healthMetricChart(series, 'free_cash_flow', { unit: '億', color: 'var(--blue)' })}
+        </div>
+      </div>
+
       <details class="detail-fold" open>
         <summary>近${series.length}季明細</summary>
         <div class="table-scroll"><table class="rtable">
@@ -717,6 +825,11 @@ function financialHealthCard() {
             ${thTip('淨利率', '淨利(營業利益+業外損益−稅金) ÷ 營收 × 100。沒有普適門檻，重點看跟營業利益率的差距是否穩定——差距=被業外損益/稅金吃掉多少')}
             ${thTip('流動比率', thresholds.current_ratio.note)}
             ${thTip('負債比率', thresholds.debt_ratio.note)}
+            ${thTip('現金含金量', thresholds.cash_quality.note)}
+            ${thTip('自由現金流', '營業活動現金流−資本支出(用投資活動現金流概算)。負值不代表不健康，擴產期常見')}
+            ${thTip('淨利率(TTM)', '杜邦分解第1個因子——賺得多不多')}
+            ${thTip('資產週轉率(TTM)', '杜邦分解第2個因子——轉得快不快(同樣資產創造多少營收)')}
+            ${thTip('權益乘數', '杜邦分解第3個因子——借得兇不兇。三個因子相乘=ROE(TTM)')}
           </tr>
           ${rows.map(r => `<tr>
             <td>${esc(r.period)}</td>
@@ -726,6 +839,11 @@ function financialHealthCard() {
             <td>${r.net_margin != null ? r.net_margin + '%' : '—'}</td>
             <td>${r.current_ratio != null ? r.current_ratio + '%' : '—'}${healthPill('current_ratio', r.current_ratio, thresholds)}</td>
             <td>${r.debt_ratio != null ? r.debt_ratio + '%' : '—'}${healthPill('debt_ratio', r.debt_ratio, thresholds)}</td>
+            <td>${fmtOrDash(r.cash_quality)}${r.cash_quality != null ? '倍' : ''}${healthPill('cash_quality', r.cash_quality, thresholds)}</td>
+            <td>${fmtE(r.free_cash_flow)}</td>
+            <td>${fmtOrDash(r.net_margin_ttm)}${r.net_margin_ttm != null ? '%' : ''}</td>
+            <td>${fmtOrDash(r.asset_turnover_ttm)}${r.asset_turnover_ttm != null ? '次' : ''}</td>
+            <td>${fmtOrDash(r.equity_multiplier)}</td>
           </tr>`).join('')}
         </table></div>
       </details>
